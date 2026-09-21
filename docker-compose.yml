@@ -16,4 +16,11 @@ services:
       - ${DATA_PATH:-./data}:/app/data
     ports:
       - '3000:3000'
+    networks:
+      - web
     command: sh -c "npx prisma db push && npm start"
+
+networks:
+  web:
+    name: web
+    external: true

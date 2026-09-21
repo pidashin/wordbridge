@@ -44,5 +44,8 @@ next-env.d.ts
 /dev.db
 /generated
 
+# local docker-compose default DATA_PATH bind mount (./data)
+/data
+
 # runtime data (contains user-submitted content, not seed data)
 word_flags.json
