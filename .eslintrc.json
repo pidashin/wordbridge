@@ -1,0 +1,11 @@
+{
+  "extends": [
+    "next/core-web-vitals",
+    "next/typescript",
+    "plugin:prettier/recommended"
+  ],
+  "rules": {
+    // Add any custom ESLint rules here
+    "prettier/prettier": ["error"]
+  }
+}

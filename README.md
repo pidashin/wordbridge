@@ -28,11 +28,16 @@ extracted into this standalone repo.
    ```
 3. Copy `.env.example` to `.env.local` and fill in your own values (see
    [AI_UI_SETUP.md](./AI_UI_SETUP.md) for the Hugging Face API key).
-4. Start the development server:
+4. Create the local SQLite database (exam history — `User`/`ExamHistory` tables):
+   ```sh
+   npx prisma db push
+   ```
+   Docker does this automatically on container start; local `npm run dev` does not.
+5. Start the development server:
    ```sh
    npm run dev
    ```
-5. Open your browser and navigate to `http://localhost:3000`
+6. Open your browser and navigate to `http://localhost:3000`
 
 ## Docker
 
