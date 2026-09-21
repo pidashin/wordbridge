@@ -9,6 +9,7 @@ import { SAVE_EXAM_RESULT } from '../gql/user';
 import FLAG_QUESTION from '../gql/flagQuestion';
 import Notice, { ColorVariant } from '../components/notice';
 import { aiTemplateService, AITemplate } from '../services/aiTemplateService';
+import { BASE_PATH } from '../basePath';
 
 type Word = {
   enUS: string;
@@ -79,7 +80,7 @@ const Summary = ({
   onChangeMode: () => void;
 }) => {
   const handleExit = () => {
-    window.location.href = '/';
+    window.location.href = `${BASE_PATH}/`;
   };
 
   return (
@@ -388,7 +389,7 @@ const ExamPage = () => {
   };
 
   const confirmExit = () => {
-    window.location.href = '/'; // Navigate to main page
+    window.location.href = `${BASE_PATH}/`; // Navigate to main page
   };
 
   const handleExit = () => {
