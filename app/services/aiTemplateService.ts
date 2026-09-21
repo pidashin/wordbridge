@@ -1,6 +1,8 @@
 // AI Template Service
 // This service loads AI-generated templates from the GraphQL API
 
+import { BASE_PATH } from '../basePath';
+
 export interface AITemplate {
   word: string;
   sentence: string;
@@ -17,7 +19,7 @@ class AITemplateService {
     if (this.loaded) return;
 
     try {
-      const response = await fetch('/api/graphql', {
+      const response = await fetch(`${BASE_PATH}/api/graphql`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -27,6 +27,7 @@ import { TbJson } from 'react-icons/tb';
 import JsonInputModal from './JsonInputModal';
 import AddWordModal from './AddWordModal';
 import { Word } from './types';
+import { BASE_PATH } from '../basePath';
 
 // Extended type to handle words merged with their AI fill-in-the-blank template
 interface WordWithTemplate extends Word {
@@ -182,7 +183,7 @@ const WordGrid: React.FC = () => {
       setAiError(null);
       setAiGenerationStatus('running');
 
-      const response = await fetch('/api/generate-ai-templates', {
+      const response = await fetch(`${BASE_PATH}/api/generate-ai-templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -205,7 +206,7 @@ const WordGrid: React.FC = () => {
 
   const stopAIGeneration = async () => {
     try {
-      const response = await fetch('/api/generate-ai-templates', {
+      const response = await fetch(`${BASE_PATH}/api/generate-ai-templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -230,7 +231,7 @@ const WordGrid: React.FC = () => {
       setAiError(null);
       setAiGenerationStatus('running');
 
-      const response = await fetch('/api/generate-ai-templates', {
+      const response = await fetch(`${BASE_PATH}/api/generate-ai-templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -253,7 +254,7 @@ const WordGrid: React.FC = () => {
 
   const pollAIGenerationStatus = async () => {
     try {
-      const response = await fetch('/api/generate-ai-templates');
+      const response = await fetch(`${BASE_PATH}/api/generate-ai-templates`);
       const status = await response.json();
 
       setAiProgress(status.progress);
@@ -392,11 +393,14 @@ const WordGrid: React.FC = () => {
       }));
 
       try {
-        const response = await fetch('/api/regenerate-translations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ words: batch.map((w) => w.enUS) }),
-        });
+        const response = await fetch(
+          `${BASE_PATH}/api/regenerate-translations`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ words: batch.map((w) => w.enUS) }),
+          },
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -592,7 +596,7 @@ const WordGrid: React.FC = () => {
     try {
       // The regenerate endpoint replaces the template, so nothing is deleted up
       // front — a failed call must leave the existing template intact.
-      const response = await fetch('/api/generate-ai-templates', {
+      const response = await fetch(`${BASE_PATH}/api/generate-ai-templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
