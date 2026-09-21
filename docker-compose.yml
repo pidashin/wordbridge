@@ -15,7 +15,12 @@ services:
     volumes:
       - ${DATA_PATH:-./data}:/app/data
     ports:
-      - '3000:3000'
+      # Host port 3001, not 3000 — the NAS's portfolio container already
+      # publishes 3000. Only affects direct host-level access; nginx reaches
+      # this container over the internal `web` Docker network by container
+      # name on its unchanged internal port (3000, Next.js's own default),
+      # so no nginx config depends on this value.
+      - '3001:3000'
     networks:
       - web
     command: sh -c "npx prisma db push && npm start"
