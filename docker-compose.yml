@@ -1,0 +1,19 @@
+version: '3'
+services:
+  webapp:
+    build:
+      context: https://github.com/pidashin/wordbridge.git#main
+      dockerfile: Dockerfile
+    image: wordbridge
+    container_name: wordbridge
+    env_file:
+      - .env.local
+    environment:
+      - WORDS_JSON_PATH=/app/data/words.json
+      - WORDS_AI_JSON_PATH=/app/data/words_ai.json
+      - DATABASE_URL=file:/app/data/dev.db
+    volumes:
+      - ${DATA_PATH:-./data}:/app/data
+    ports:
+      - '3000:3000'
+    command: sh -c "npx prisma db push && npm start"
