@@ -158,7 +158,7 @@ async function callHuggingFaceAPI(words: Word[]): Promise<AITemplate[]> {
   console.log('- Prompt length:', prompt.length);
 
   const response = await client.chatCompletion({
-    provider: 'hyperbolic', // Using hyperbolic provider to respect billing / free tier
+    provider: 'novita',
     model: 'meta-llama/Llama-3.3-70B-Instruct',
     messages: [
       {
