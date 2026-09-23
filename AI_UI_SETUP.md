@@ -68,12 +68,12 @@ The status section shows:
 
 ### 1. Template Generation Process
 
-1. **Load Words**: Reads all words from `words.json` via GraphQL API
-2. **Check Existing**: Skips words that already have AI templates in `words_ai.json`
+1. **Load Words**: Reads all words from the `Word` Prisma table via GraphQL API
+2. **Check Existing**: Skips words that already have AI templates in the `AITemplate` Prisma table
 3. **Batch Processing**: Processes words in batches of 5
 4. **AI Generation**: Calls Hugging Face Inference API to generate templates
 5. **Fallback**: Uses mock responses if Hugging Face API fails
-6. **Save Results**: Saves generated templates to `words_ai.json`
+6. **Save Results**: Saves generated templates to the `AITemplate` Prisma table
 7. **GraphQL Integration**: Templates are immediately available via GraphQL API
 
 ### 2. Template Format
@@ -154,9 +154,7 @@ app/
 │   ├── generate-ai-templates/
 │   │   └── route.ts                 # AI generation API endpoint
 │   └── graphql/
-│       ├── route.ts                 # GraphQL API server
-│       ├── words.json               # Original words data
-│       └── words_ai.json            # Generated AI templates
+│       └── route.ts                 # GraphQL API server (reads/writes Word & AITemplate Prisma tables)
 ├── services/
 │   └── aiTemplateService.ts         # AI template service (GraphQL client)
 ├── gql/
@@ -192,7 +190,7 @@ npm run test:api
 2. Navigate to `/wordResource`
 3. Click "Generate AI Templates"
 4. Check the browser console for debug logs
-5. Verify templates are saved to `words_ai.json`
+5. Verify templates are saved to the `AITemplate` Prisma table
 
 ## Troubleshooting
 
