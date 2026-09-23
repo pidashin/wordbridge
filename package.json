@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed:words": "tsx prisma/seed-words.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed-words.ts"
   },
   "dependencies": {
     "@apollo/client": "^3.12.4",
@@ -36,6 +40,7 @@
     "prettier": "^3.4.1",
     "prisma": "^7.8.0",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "resolutions": {

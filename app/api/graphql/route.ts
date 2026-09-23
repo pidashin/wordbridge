@@ -41,12 +41,8 @@ interface WordInput {
   zhTW: string;
 }
 
-// Path to the words.json file (ensure it's relative to the project root or public directory)
-const wordsFilePath =
-  process.env.WORDS_JSON_PATH ||
-  path.join(process.cwd(), 'app', 'api', 'graphql', 'words.json');
-
-// Path to the words_ai.json file
+// Path to the words_ai.json file (still used to derive the word_flags.json
+// location below; words/AI-template data itself now lives in Prisma)
 const wordsAIFilePath =
   process.env.WORDS_AI_JSON_PATH ||
   path.join(process.cwd(), 'app', 'api', 'graphql', 'words_ai.json');
@@ -56,65 +52,15 @@ const flagsFilePath =
   process.env.WORD_FLAGS_JSON_PATH ||
   path.join(path.dirname(wordsAIFilePath), 'word_flags.json');
 
-let wordsCache: Word[] | null = null;
-let aiTemplatesCache: AITemplate[] | null = null;
 let flagsCache: QuestionFlag[] | null = null;
-let wordsLastModified: number | null = null;
-let aiTemplatesLastModified: number | null = null;
 let flagsLastModified: number | null = null;
 
-// Clear cache function
+// Clear cache function (only the file-backed question-flags cache remains
+// in-memory now that words/AI templates are read from the database)
 const clearCache = () => {
-  wordsCache = null;
-  aiTemplatesCache = null;
   flagsCache = null;
-  wordsLastModified = null;
-  aiTemplatesLastModified = null;
   flagsLastModified = null;
   console.log('🔄 GraphQL cache cleared');
-};
-
-// Load AI templates from file
-const loadAITemplates = (): AITemplate[] => {
-  // Check if file has been modified since last cache
-  const fileExists = fs.existsSync(wordsAIFilePath);
-  if (fileExists) {
-    const stats = fs.statSync(wordsAIFilePath);
-    const lastModified = stats.mtime.getTime();
-
-    // If file has been modified since last cache, clear cache
-    if (
-      aiTemplatesLastModified !== null &&
-      lastModified > aiTemplatesLastModified
-    ) {
-      console.log('🔄 AI templates file updated, clearing cache');
-      aiTemplatesCache = null;
-    }
-
-    // If we have valid cache, return it
-    if (aiTemplatesCache && aiTemplatesLastModified === lastModified) {
-      return aiTemplatesCache;
-    }
-
-    // Load fresh data from file
-    try {
-      console.log('Loading AI templates from:', wordsAIFilePath);
-      const fileData = fs.readFileSync(wordsAIFilePath, 'utf-8');
-      aiTemplatesCache = JSON.parse(fileData);
-      aiTemplatesLastModified = lastModified;
-      console.log('Loaded', aiTemplatesCache?.length || 0, 'AI templates');
-    } catch (error) {
-      console.error('Error loading AI templates:', error);
-      aiTemplatesCache = [];
-      aiTemplatesLastModified = lastModified;
-    }
-  } else {
-    console.log('AI templates file does not exist');
-    aiTemplatesCache = [];
-    aiTemplatesLastModified = null;
-  }
-
-  return aiTemplatesCache || [];
 };
 
 // Drop malformed records so a hand-edited file cannot break the words query
@@ -203,90 +149,6 @@ const saveQuestionFlags = (flags: QuestionFlag[]) => {
   // Only adopt the new state once it is actually on disk
   flagsCache = flags;
   flagsLastModified = Date.now();
-};
-
-// Check if a word has AI template
-const checkAITemplateStatus = (word: string): boolean => {
-  const templates = loadAITemplates();
-  return templates.some(
-    (template) => template.word.toLowerCase() === word.toLowerCase(),
-  );
-};
-
-// Read the words from the JSON file
-const getWords = (): Word[] | null => {
-  // Check if file has been modified since last cache
-  const fileExists = fs.existsSync(wordsFilePath);
-  if (fileExists) {
-    const stats = fs.statSync(wordsFilePath);
-    const lastModified = stats.mtime.getTime();
-
-    // If file has been modified since last cache, clear cache
-    if (wordsLastModified !== null && lastModified > wordsLastModified) {
-      console.log('🔄 Words file updated, clearing cache');
-      wordsCache = null;
-    }
-
-    // If we have valid cache, return it
-    if (wordsCache && wordsLastModified === lastModified) {
-      return wordsCache;
-    }
-
-    // Load fresh data from file
-    try {
-      console.log('Loading words from:', wordsFilePath);
-      const fileData = fs.readFileSync(wordsFilePath, 'utf-8');
-      wordsCache = JSON.parse(fileData);
-      wordsLastModified = lastModified;
-      console.log('Loaded', wordsCache?.length || 0, 'words');
-    } catch (error) {
-      console.error('Error reading the words.json file:', error);
-      wordsCache = [];
-      wordsLastModified = lastModified;
-    }
-  } else {
-    // If the file doesn't exist, create an empty file
-    try {
-      console.log('Words file does not exist, creating empty file');
-      fs.writeFileSync(wordsFilePath, JSON.stringify([]));
-      wordsCache = [];
-      wordsLastModified = Date.now();
-    } catch (error) {
-      console.error('Error creating words.json file:', error);
-      return null;
-    }
-  }
-
-  return wordsCache;
-};
-
-// Save the updated words to the JSON file
-const saveWords = (words: Word[]) => {
-  try {
-    fs.writeFileSync(wordsFilePath, JSON.stringify(words, null, 2));
-    wordsCache = words; // Update in-memory cache
-  } catch (error) {
-    console.error('Error saving the words.json file:', error);
-  }
-};
-
-// Helper function to add words while avoiding duplicates
-const addUniqueWords = (words: Word[], newWords: WordInput[]): Word[] => {
-  const existingWords = new Set(words.map((word) => word.enUS));
-
-  newWords.forEach((newWord) => {
-    if (!existingWords.has(newWord.enUS)) {
-      words.push({ enUS: newWord.enUS, zhTW: newWord.zhTW });
-      existingWords.add(newWord.enUS); // Mark the word as added
-    }
-  });
-
-  return words;
-};
-
-const deleteWordsByKey = (words: Word[], enUsKeys: string[]): Word[] => {
-  const wordsToDelete = new Set(enUsKeys);
-  return words.filter((word) => !wordsToDelete.has(word.enUS));
 };
 
 // GraphQL Schema Definition
@@ -387,36 +249,48 @@ const typeDefs = gql`
 // GraphQL Resolvers
 const resolvers = {
   Query: {
-    words: (): Word[] | null => {
-      const words = getWords();
-      if (!words) {
-        return []; // Return empty array if words data is not found
-      }
+    words: async (): Promise<Word[]> => {
+      const [words, templates] = await Promise.all([
+        prisma.word.findMany({ orderBy: { createdAt: 'asc' } }),
+        prisma.aITemplate.findMany({ select: { word: true } }),
+      ]);
+      const templatedWords = new Set(
+        templates.map((t) => t.word.toLowerCase()),
+      );
 
-      // Add AI template status to each word
       return words.map((word) => ({
-        ...word,
-        hasAITemplate: checkAITemplateStatus(word.enUS),
+        enUS: word.enUS,
+        zhTW: word.zhTW,
+        hasAITemplate: templatedWords.has(word.enUS.toLowerCase()),
       }));
     },
 
-    wordsWithAITemplates: (): Word[] | null => {
-      const words = getWords();
-      if (!words) {
-        return []; // Return empty array if words data is not found
-      }
+    wordsWithAITemplates: async (): Promise<Word[]> => {
+      const [words, templates] = await Promise.all([
+        prisma.word.findMany({ orderBy: { createdAt: 'asc' } }),
+        prisma.aITemplate.findMany({ select: { word: true } }),
+      ]);
+      const templatedWords = new Set(
+        templates.map((t) => t.word.toLowerCase()),
+      );
 
-      // Filter words that have AI templates and add AI template data
       return words
-        .filter((word) => checkAITemplateStatus(word.enUS))
+        .filter((word) => templatedWords.has(word.enUS.toLowerCase()))
         .map((word) => ({
-          ...word,
+          enUS: word.enUS,
+          zhTW: word.zhTW,
           hasAITemplate: true,
         }));
     },
 
-    aiTemplates: (): AITemplate[] => {
-      return loadAITemplates();
+    aiTemplates: async (): Promise<AITemplate[]> => {
+      const templates = await prisma.aITemplate.findMany();
+      return templates.map((t) => ({
+        word: t.word,
+        sentence: t.sentence,
+        options: JSON.parse(t.options),
+        answer: t.answer,
+      }));
     },
 
     questionFlags: (): QuestionFlag[] => {
@@ -445,92 +319,93 @@ const resolvers = {
     },
   },
   Mutation: {
-    addWord: (_: unknown, { word }: { word: WordInput }): Word => {
-      const words = getWords();
-      if (!words) {
-        throw new Error('Failed to load words data.');
-      }
-
-      const updatedWords = addUniqueWords(words, [word]); // Pass as an array to reuse the helper
-      saveWords(updatedWords); // Save the updated list
-      return updatedWords.find((w) => w.enUS === word.enUS) as Word;
+    addWord: async (
+      _: unknown,
+      { word }: { word: WordInput },
+    ): Promise<Word> => {
+      const created = await prisma.word.upsert({
+        where: { enUS: word.enUS },
+        update: {},
+        create: { enUS: word.enUS, zhTW: word.zhTW },
+      });
+      return { enUS: created.enUS, zhTW: created.zhTW };
     },
 
-    addWords: (_: unknown, { words }: { words: WordInput[] }): Word[] => {
-      const currentWords = getWords();
-      if (!currentWords) {
-        throw new Error('Failed to load words data.');
-      }
-
-      const updatedWords = addUniqueWords(currentWords, words);
-      saveWords(updatedWords);
-      return updatedWords;
+    addWords: async (
+      _: unknown,
+      { words }: { words: WordInput[] },
+    ): Promise<Word[]> => {
+      await Promise.all(
+        words.map((word) =>
+          prisma.word.upsert({
+            where: { enUS: word.enUS },
+            update: {}, // Leave existing words untouched (skip-duplicates semantics)
+            create: { enUS: word.enUS, zhTW: word.zhTW },
+          }),
+        ),
+      );
+      const allWords = await prisma.word.findMany({
+        orderBy: { createdAt: 'asc' },
+      });
+      return allWords.map((w) => ({ enUS: w.enUS, zhTW: w.zhTW }));
     },
 
-    updateWord: (_: unknown, { word }: { word: WordInput }): Word | null => {
-      const words = getWords();
-      if (!words) {
-        throw new Error('Failed to load words data.');
-      }
-
-      const index = words.findIndex((w) => w.enUS === word.enUS);
-      if (index === -1) {
+    updateWord: async (
+      _: unknown,
+      { word }: { word: WordInput },
+    ): Promise<Word | null> => {
+      try {
+        const updated = await prisma.word.update({
+          where: { enUS: word.enUS },
+          data: { zhTW: word.zhTW },
+        });
+        return { enUS: updated.enUS, zhTW: updated.zhTW };
+      } catch (error) {
+        console.error('Error updating word:', error);
         return null; // Return null if word is not found
       }
-
-      words[index] = { enUS: word.enUS, zhTW: word.zhTW };
-      saveWords(words);
-      return words[index];
     },
 
-    updateWords: (_: unknown, { words }: { words: WordInput[] }): Word[] => {
-      const currentWords = getWords();
-      if (!currentWords) {
-        throw new Error('Failed to load words data.');
-      }
+    updateWords: async (
+      _: unknown,
+      { words }: { words: WordInput[] },
+    ): Promise<Word[]> => {
+      await Promise.all(
+        words.map(
+          (word) =>
+            prisma.word
+              .update({
+                where: { enUS: word.enUS },
+                data: { zhTW: word.zhTW },
+              })
+              .catch(() => null), // Silently skip words that don't exist
+        ),
+      );
 
-      words.forEach((word) => {
-        const index = currentWords.findIndex((w) => w.enUS === word.enUS);
-        if (index > -1) {
-          currentWords[index] = { enUS: word.enUS, zhTW: word.zhTW };
-        }
+      const allWords = await prisma.word.findMany({
+        orderBy: { createdAt: 'asc' },
       });
-
-      saveWords(currentWords);
-      return currentWords;
+      return allWords.map((w) => ({ enUS: w.enUS, zhTW: w.zhTW }));
     },
 
-    deleteWord: (_: unknown, { enUsKey }: { enUsKey: string }): boolean => {
-      const words = getWords();
-      if (!words) {
-        throw new Error('Failed to load words data.');
-      }
-
-      const newWords = deleteWordsByKey(words, [enUsKey]); // Pass single key as an array
-      if (newWords.length === words.length) {
-        return false; // No word was deleted
-      }
-
-      saveWords(newWords);
-      return true;
+    deleteWord: async (
+      _: unknown,
+      { enUsKey }: { enUsKey: string },
+    ): Promise<boolean> => {
+      const { count } = await prisma.word.deleteMany({
+        where: { enUS: enUsKey },
+      });
+      return count > 0;
     },
 
-    deleteWords: (
+    deleteWords: async (
       _: unknown,
       { enUsKeys }: { enUsKeys: string[] },
-    ): boolean => {
-      const words = getWords();
-      if (!words) {
-        throw new Error('Failed to load words data.');
-      }
-
-      const newWords = deleteWordsByKey(words, enUsKeys); // Pass multiple keys as an array
-      if (newWords.length === words.length) {
-        return false; // No words were deleted
-      }
-
-      saveWords(newWords);
-      return true;
+    ): Promise<boolean> => {
+      const { count } = await prisma.word.deleteMany({
+        where: { enUS: { in: enUsKeys } },
+      });
+      return count > 0;
     },
 
     createUser: async (_: unknown, { username }: { username: string }) => {
@@ -567,28 +442,24 @@ const resolvers = {
       return { ...history, createdAt: history.createdAt.toISOString() };
     },
 
-    saveAITemplate: (
+    saveAITemplate: async (
       _: unknown,
       { template }: { template: AITemplate },
-    ): AITemplate => {
-      const templates = loadAITemplates();
-      const index = templates.findIndex(
-        (t) => t.word.toLowerCase() === template.word.toLowerCase(),
-      );
-
-      if (index > -1) {
-        templates[index] = template;
-      } else {
-        templates.push(template);
-      }
-
-      const templatesPath =
-        process.env.WORDS_AI_JSON_PATH ||
-        path.join(process.cwd(), 'app', 'api', 'graphql', 'words_ai.json');
-      fs.writeFileSync(templatesPath, JSON.stringify(templates, null, 2));
-
-      aiTemplatesCache = templates;
-      aiTemplatesLastModified = Date.now();
+    ): Promise<AITemplate> => {
+      const saved = await prisma.aITemplate.upsert({
+        where: { word: template.word },
+        update: {
+          sentence: template.sentence,
+          options: JSON.stringify(template.options),
+          answer: template.answer,
+        },
+        create: {
+          word: template.word,
+          sentence: template.sentence,
+          options: JSON.stringify(template.options),
+          answer: template.answer,
+        },
+      });
 
       try {
         aiTemplateService.clearCache();
@@ -596,26 +467,24 @@ const resolvers = {
         console.error('Failed to clear aiTemplateService cache:', e);
       }
 
-      return template;
+      return {
+        word: saved.word,
+        sentence: saved.sentence,
+        options: JSON.parse(saved.options),
+        answer: saved.answer,
+      };
     },
 
-    deleteAITemplate: (_: unknown, { word }: { word: string }): boolean => {
-      const templates = loadAITemplates();
-      const filtered = templates.filter(
-        (t) => t.word.toLowerCase() !== word.toLowerCase(),
-      );
-
-      if (filtered.length === templates.length) {
+    deleteAITemplate: async (
+      _: unknown,
+      { word }: { word: string },
+    ): Promise<boolean> => {
+      try {
+        await prisma.aITemplate.delete({ where: { word } });
+      } catch (error) {
+        console.error('Error deleting AI template:', error);
         return false;
       }
-
-      const templatesPath =
-        process.env.WORDS_AI_JSON_PATH ||
-        path.join(process.cwd(), 'app', 'api', 'graphql', 'words_ai.json');
-      fs.writeFileSync(templatesPath, JSON.stringify(filtered, null, 2));
-
-      aiTemplatesCache = filtered;
-      aiTemplatesLastModified = Date.now();
 
       try {
         aiTemplateService.clearCache();
