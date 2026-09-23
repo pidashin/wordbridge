@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-// import wordResource from './words.json';
 import { FiX, FiFlag } from 'react-icons/fi'; // Icons for exit and report buttons
 import GET_WORDS from '../gql/getWords';
 import { useQuery, useMutation } from '@apollo/client';
