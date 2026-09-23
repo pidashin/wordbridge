@@ -30,3 +30,19 @@ model ExamHistory {
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model Word {
+  id        String   @id @default(cuid())
+  enUS      String   @unique
+  zhTW      String
+  createdAt DateTime @default(now())
+}
+
+model AITemplate {
+  id        String   @id @default(cuid())
+  word      String   @unique
+  sentence  String
+  options   String   // JSON string, e.g. JSON.stringify(string[])
+  answer    String
+  createdAt DateTime @default(now())
+}

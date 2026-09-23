@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { InferenceClient } from '@huggingface/inference';
+import prisma from '../db';
 import { aiTemplateService } from '../../services/aiTemplateService';
 
 // Types
 interface Word {
   enUS: string;
   zhTW: string;
-  label: string;
-  templates?: Array<{
-    template: string;
-    options: string[];
-  }>;
 }
 
 interface AITemplate {
@@ -47,25 +41,10 @@ let generationStatus: GenerationStatus = {
   },
 };
 
-// Load words from JSON file
-function loadWords(): Word[] {
-  const wordsPath =
-    process.env.WORDS_JSON_PATH ||
-    path.join(process.cwd(), 'app/api/graphql/words.json');
-  const wordsData = fs.readFileSync(wordsPath, 'utf8');
-  return JSON.parse(wordsData);
-}
-
-// Save AI templates to JSON file
-async function saveAITemplates(templates: AITemplate[]): Promise<void> {
-  const templatesPath =
-    process.env.WORDS_AI_JSON_PATH ||
-    path.join(process.cwd(), 'app/api/graphql/words_ai.json');
-  fs.writeFileSync(templatesPath, JSON.stringify(templates, null, 2));
-  console.log(`✅ Saved ${templates.length} AI templates to words_ai.json`);
-
-  // Clear AI template service cache
-  clearAITemplateServiceCache();
+// Load words from the database
+async function loadWords(): Promise<Word[]> {
+  const words = await prisma.word.findMany();
+  return words.map((w) => ({ enUS: w.enUS, zhTW: w.zhTW }));
 }
 
 // Clear AI template service cache
@@ -78,16 +57,40 @@ function clearAITemplateServiceCache() {
   }
 }
 
-// Load existing AI templates
-function loadAITemplates(): AITemplate[] {
-  const templatesPath =
-    process.env.WORDS_AI_JSON_PATH ||
-    path.join(process.cwd(), 'app/api/graphql/words_ai.json');
-  if (fs.existsSync(templatesPath)) {
-    const templatesData = fs.readFileSync(templatesPath, 'utf8');
-    return JSON.parse(templatesData);
+// Upsert only the given AI templates into the database (a DB doesn't need
+// whole-table rewrites the way the old words_ai.json file did)
+async function persistAITemplates(templates: AITemplate[]): Promise<void> {
+  for (const t of templates) {
+    await prisma.aITemplate.upsert({
+      where: { word: t.word },
+      create: {
+        word: t.word,
+        sentence: t.sentence,
+        options: JSON.stringify(t.options),
+        answer: t.answer,
+      },
+      update: {
+        sentence: t.sentence,
+        options: JSON.stringify(t.options),
+        answer: t.answer,
+      },
+    });
   }
-  return [];
+  console.log(`✅ Persisted ${templates.length} AI templates to the database`);
+
+  // Clear AI template service cache
+  clearAITemplateServiceCache();
+}
+
+// Load existing AI templates from the database
+async function loadAITemplates(): Promise<AITemplate[]> {
+  const templates = await prisma.aITemplate.findMany();
+  return templates.map((t) => ({
+    word: t.word,
+    sentence: t.sentence,
+    options: JSON.parse(t.options),
+    answer: t.answer,
+  }));
 }
 
 // Create batch prompt for multiple words using the new format
@@ -256,7 +259,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const allWords = loadWords();
+      const allWords = await loadWords();
       const targets: Word[] = [];
       const missing: string[] = [];
 
@@ -308,15 +311,7 @@ export async function POST(request: NextRequest) {
             ) as AITemplate,
         );
 
-        const existingTemplates = loadAITemplates();
-        const regeneratedWords = new Set(
-          validatedTemplates.map((t) => t.word.toLowerCase()),
-        );
-        const merged = existingTemplates
-          .filter((t) => !regeneratedWords.has(t.word.toLowerCase()))
-          .concat(validatedTemplates);
-
-        await saveAITemplates(merged);
+        await persistAITemplates(validatedTemplates);
 
         return NextResponse.json({ templates: validatedTemplates });
       } catch (error) {
@@ -428,8 +423,8 @@ async function generateAITemplates() {
   try {
     console.log('🚀 Starting AI template generation...');
 
-    const words = loadWords();
-    const existingTemplates = loadAITemplates();
+    const words = await loadWords();
+    const existingTemplates = await loadAITemplates();
     const existingWords = new Set(existingTemplates.map((t) => t.word));
 
     // Filter out words that already have AI templates
@@ -461,7 +456,6 @@ async function generateAITemplates() {
       generationStatus.progress.totalBatches = totalBatches;
     }
 
-    const allTemplates: AITemplate[] = [...existingTemplates];
     const startBatch = generationStatus.lastProcessedBatch || 0;
 
     console.log(
@@ -492,7 +486,6 @@ async function generateAITemplates() {
 
       try {
         const batchTemplates = await processBatch(batch);
-        allTemplates.push(...batchTemplates);
 
         generationStatus.progress.processed += batch.length;
         generationStatus.lastProcessedBatch = batchNumber;
@@ -504,8 +497,9 @@ async function generateAITemplates() {
           `📊 Progress: ${generationStatus.progress.processed}/${generationStatus.progress.total} words`,
         );
 
-        // Save progress after each successful batch
-        await saveAITemplates(allTemplates);
+        // Persist just this batch's templates (a DB doesn't need the whole
+        // table rewritten the way the old words_ai.json file did)
+        await persistAITemplates(batchTemplates);
 
         // Small delay to avoid rate limiting
         await new Promise((resolve) => setTimeout(resolve, 2000));
