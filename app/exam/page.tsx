@@ -6,6 +6,9 @@ import GET_WORDS from '../gql/getWords';
 import { useQuery, useMutation } from '@apollo/client';
 import { SAVE_EXAM_RESULT } from '../gql/user';
 import FLAG_QUESTION from '../gql/flagQuestion';
+import GET_WORD_PROGRESS from '../gql/getWordProgress';
+import GET_MISTAKE_WORDS from '../gql/getMistakeWords';
+import RECORD_ANSWER from '../gql/recordAnswer';
 import Notice, { ColorVariant } from '../components/notice';
 import { aiTemplateService, AITemplate } from '../services/aiTemplateService';
 import { BASE_PATH } from '../basePath';
@@ -132,14 +135,47 @@ const TEMPLATE_QUESTION_RATIO = 0.4; // 30% template, 70% original
 
 const ENUS_QUESTION_WEIGHT = 0.6;
 
-type ExamMode = 'mixed' | 'translation';
+type ExamMode = 'mixed' | 'translation' | 'review';
+
+// Roulette-wheel-without-replacement shuffle: each word's chance of being
+// drawn (and drawn early) is proportional to its weight, so a plain shuffle
+// (all weights equal) is just a special case of this.
+const weightedShuffle = (
+  words: Word[],
+  weightOf: (word: Word) => number,
+): Word[] => {
+  const pool = [...words];
+  const result: Word[] = [];
+
+  while (pool.length > 0) {
+    const weights = pool.map((w) => Math.max(weightOf(w), 0.0001));
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    let target = Math.random() * totalWeight;
+
+    let pickIndex = pool.length - 1;
+    for (let i = 0; i < weights.length; i++) {
+      target -= weights[i];
+      if (target <= 0) {
+        pickIndex = i;
+        break;
+      }
+    }
+
+    result.push(pool.splice(pickIndex, 1)[0]);
+  }
+
+  return result;
+};
 
 const genQuestions = async (
-  words: Word[],
+  pool: Word[],
   aiTemplates: AITemplate[],
   mode: ExamMode = 'mixed',
+  questionSource: Word[] = pool,
+  weightOf: (word: Word) => number = () => 1,
 ): Promise<Question[]> => {
-  const shuffledWords = [...words].sort(() => 0.5 - Math.random());
+  const words = pool;
+  const shuffledWords = weightedShuffle(questionSource, weightOf);
   const targetTemplateCount =
     mode === 'mixed' ? Math.round(10 * TEMPLATE_QUESTION_RATIO) : 0;
 
@@ -267,14 +303,19 @@ const ExamPage = () => {
   );
   const [reportingIdx, setReportingIdx] = useState<number | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const [saveExamResult] = useMutation(SAVE_EXAM_RESULT);
   const [flagQuestion] = useMutation(FLAG_QUESTION);
+  const [recordAnswer] = useMutation(RECORD_ANSWER);
 
   // Ensure we're on the client side before generating questions
   React.useEffect(() => {
     setIsClient(true);
+    setUserId(localStorage.getItem('wordbridge_user_id'));
   }, []);
+
+  const isReviewMode = selectedMode === 'review';
 
   const {
     data: data_get_words,
@@ -284,25 +325,95 @@ const ExamPage = () => {
     skip: !isClient || !selectedMode, // Only run query on client side and when mode is selected
   });
 
+  const { data: data_get_word_progress, loading: wordProgressLoading } =
+    useQuery(GET_WORD_PROGRESS, {
+      variables: { userId },
+      skip: !isClient || !selectedMode || !userId || isReviewMode,
+    });
+
+  const { data: data_get_mistake_words, loading: mistakeWordsLoading } =
+    useQuery(GET_MISTAKE_WORDS, {
+      variables: { userId },
+      skip: !isClient || !userId || !isReviewMode,
+    });
+
+  // Review mode has no meaning without a userId (there's no per-user
+  // progress to review) — surface a dedicated state instead of letting the
+  // mistake-words query stay permanently skipped/undefined, which would
+  // otherwise leave the generic loading screen spinning forever.
+  const needsUserIdForReview = isClient && isReviewMode && !userId;
+
+  const hasNoMistakeWords =
+    isReviewMode &&
+    !needsUserIdForReview &&
+    !mistakeWordsLoading &&
+    !!data_get_mistake_words &&
+    data_get_mistake_words.mistakeWords.length === 0;
+
   React.useEffect(() => {
     const initQuestions = async () => {
       if (
         isClient &&
         selectedMode &&
         data_get_words?.words &&
+        !wordProgressLoading &&
         questions.length === 0
       ) {
+        if (isReviewMode) {
+          if (needsUserIdForReview) {
+            return; // Dedicated UI state is shown instead
+          }
+          if (!data_get_mistake_words) {
+            return;
+          }
+          if (data_get_mistake_words.mistakeWords.length === 0) {
+            return; // Empty-state screen is shown instead
+          }
+          const aiTemplates = await aiTemplateService.getAllTemplates();
+          const generatedQuestions = await genQuestions(
+            data_get_words.words,
+            aiTemplates,
+            selectedMode,
+            data_get_mistake_words.mistakeWords,
+          );
+          setQuestions(generatedQuestions);
+          return;
+        }
+
+        const weightMap = new Map<string, number>(
+          (data_get_word_progress?.wordProgress || []).map(
+            (p: { word: string; wrongWeight: number }) => [
+              p.word.toLowerCase(),
+              p.wrongWeight,
+            ],
+          ),
+        );
+        const weightOf = (word: Word) =>
+          1 + (weightMap.get(word.enUS.toLowerCase()) || 0);
+
         const aiTemplates = await aiTemplateService.getAllTemplates();
         const generatedQuestions = await genQuestions(
           data_get_words.words,
           aiTemplates,
           selectedMode,
+          data_get_words.words,
+          weightOf,
         );
         setQuestions(generatedQuestions);
       }
     };
     initQuestions();
-  }, [isClient, selectedMode, data_get_words, questions.length]);
+  }, [
+    isClient,
+    selectedMode,
+    isReviewMode,
+    needsUserIdForReview,
+    data_get_words,
+    data_get_word_progress,
+    wordProgressLoading,
+    data_get_mistake_words,
+    questions.length,
+  ]);
 
   const handleOptionSelect = (idx: number) => {
     if (isCorrect === null) {
@@ -331,6 +442,19 @@ const ExamPage = () => {
           correct: currentQuestion.question.answer,
         },
       ]);
+    }
+
+    if (userId) {
+      recordAnswer({
+        variables: {
+          userId,
+          word: currentQuestion.word,
+          correct: isAnswerCorrect,
+          isMistakeReview: selectedMode === 'review',
+        },
+      }).catch((e) => {
+        console.error('Failed to record answer', e);
+      });
     }
   };
 
@@ -454,7 +578,52 @@ const ExamPage = () => {
               Combination of translation and fill-in-the-blank sentences
             </span>
           </button>
+          <button
+            className="w-full p-6 text-xl font-semibold border-2 border-rose-500 rounded-xl hover:bg-rose-50 transition-colors flex flex-col items-center"
+            onClick={() => setSelectedMode('review')}
+          >
+            <span className="text-2xl mb-1">Mistake Review</span>
+            <span className="text-sm font-normal text-gray-500 text-center">
+              Only words you&apos;ve gotten wrong before
+            </span>
+          </button>
         </div>
+      </div>
+    );
+  }
+
+  if (needsUserIdForReview) {
+    return (
+      <div className="p-8 h-[80vh] flex flex-col items-center justify-center text-center gap-6">
+        <h1 className="text-2xl font-bold">
+          Select a user first to use Mistake Review
+        </h1>
+        <p className="text-gray-500 max-w-sm">
+          Mistake Review tracks wrong answers per user — head back to the home
+          page and choose a user before trying this mode.
+        </p>
+        <button
+          className="px-6 py-3 bg-purple-500 text-white rounded-xl font-semibold shadow-md hover:bg-purple-600 transition-colors"
+          onClick={confirmExit}
+        >
+          Back to Home
+        </button>
+      </div>
+    );
+  }
+
+  if (hasNoMistakeWords && questions.length === 0) {
+    return (
+      <div className="p-8 h-[80vh] flex flex-col items-center justify-center text-center gap-6">
+        <h1 className="text-2xl font-bold">
+          No mistakes to review — nice work!
+        </h1>
+        <button
+          className="px-6 py-3 bg-purple-500 text-white rounded-xl font-semibold shadow-md hover:bg-purple-600 transition-colors"
+          onClick={handleChangeMode}
+        >
+          Back to Mode Selection
+        </button>
       </div>
     );
   }
