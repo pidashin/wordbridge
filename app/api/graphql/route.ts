@@ -41,6 +41,13 @@ interface WordInput {
   zhTW: string;
 }
 
+// Shape of a per-user word progress entry
+interface WordProgressEntry {
+  word: string;
+  isWrong: boolean;
+  wrongWeight: number;
+}
+
 // Path to the words_ai.json file (still used to derive the word_flags.json
 // location below; words/AI-template data itself now lives in Prisma)
 const wordsAIFilePath =
@@ -205,6 +212,12 @@ const typeDefs = gql`
     createdAt: String!
   }
 
+  type WordProgressEntry {
+    word: String!
+    isWrong: Boolean!
+    wrongWeight: Int!
+  }
+
   type Query {
     words: [Word!]!
     wordsWithAITemplates: [Word!]!
@@ -213,6 +226,8 @@ const typeDefs = gql`
     clearCache: Boolean!
     getUsers: [User!]!
     getExamHistory(userId: String!): [ExamHistory!]!
+    wordProgress(userId: String!): [WordProgressEntry!]!
+    mistakeWords(userId: String!): [Word!]!
   }
 
   type Mutation {
@@ -243,6 +258,13 @@ const typeDefs = gql`
       reason: String
     ): QuestionFlag!
     resolveQuestionFlag(word: String!, questionType: String): Boolean!
+
+    recordAnswer(
+      userId: String!
+      word: String!
+      correct: Boolean!
+      isMistakeReview: Boolean!
+    ): WordProgressEntry!
   }
 `;
 
@@ -316,6 +338,47 @@ const resolvers = {
         ...h,
         createdAt: h.createdAt.toISOString(),
       }));
+    },
+
+    wordProgress: async (
+      _: unknown,
+      { userId }: { userId: string },
+    ): Promise<WordProgressEntry[]> => {
+      const progress = await prisma.wordProgress.findMany({
+        where: { userId },
+      });
+      return progress.map((p) => ({
+        word: p.word,
+        isWrong: p.isWrong,
+        wrongWeight: p.wrongWeight,
+      }));
+    },
+
+    mistakeWords: async (
+      _: unknown,
+      { userId }: { userId: string },
+    ): Promise<Word[]> => {
+      const [progress, words, templates] = await Promise.all([
+        prisma.wordProgress.findMany({
+          where: { userId, isWrong: true },
+          select: { word: true },
+        }),
+        prisma.word.findMany({ orderBy: { createdAt: 'asc' } }),
+        prisma.aITemplate.findMany({ select: { word: true } }),
+      ]);
+
+      const mistakeWords = new Set(progress.map((p) => p.word.toLowerCase()));
+      const templatedWords = new Set(
+        templates.map((t) => t.word.toLowerCase()),
+      );
+
+      return words
+        .filter((word) => mistakeWords.has(word.enUS.toLowerCase()))
+        .map((word) => ({
+          enUS: word.enUS,
+          zhTW: word.zhTW,
+          hasAITemplate: templatedWords.has(word.enUS.toLowerCase()),
+        }));
     },
   },
   Mutation: {
@@ -566,6 +629,54 @@ const resolvers = {
 
       saveQuestionFlags(filtered);
       return true;
+    },
+
+    recordAnswer: async (
+      _: unknown,
+      {
+        userId,
+        word,
+        correct,
+        isMistakeReview,
+      }: {
+        userId: string;
+        word: string;
+        correct: boolean;
+        isMistakeReview: boolean;
+      },
+    ): Promise<WordProgressEntry> => {
+      const existing = await prisma.wordProgress.findUnique({
+        where: { userId_word: { userId, word } },
+      });
+
+      const nextWrongWeight = correct
+        ? Math.max(0, (existing?.wrongWeight ?? 0) - 1)
+        : (existing?.wrongWeight ?? 0) + 2;
+
+      // A correct answer only clears the mistake flag during mistake review;
+      // a normal-mode correct answer just decays the weight.
+      const nextIsWrong = correct
+        ? isMistakeReview
+          ? false
+          : (existing?.isWrong ?? false)
+        : true;
+
+      const saved = await prisma.wordProgress.upsert({
+        where: { userId_word: { userId, word } },
+        update: { isWrong: nextIsWrong, wrongWeight: nextWrongWeight },
+        create: {
+          userId,
+          word,
+          isWrong: nextIsWrong,
+          wrongWeight: nextWrongWeight,
+        },
+      });
+
+      return {
+        word: saved.word,
+        isWrong: saved.isWrong,
+        wrongWeight: saved.wrongWeight,
+      };
     },
   },
 };
