@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { InferenceClient } from '@huggingface/inference';
 import prisma from '../db';
+import { generateText } from '../gemini';
 import { aiTemplateService } from '../../services/aiTemplateService';
 
 // Types
@@ -118,15 +118,6 @@ Rules:
 - Do not include explanations or text outside of the JSON array.`;
 }
 
-// Initialize Hugging Face Inference Client
-function getInferenceClient(): InferenceClient {
-  const apiKey = process.env.HUGGING_FACE_API_KEY;
-  if (!apiKey) {
-    throw new Error('HUGGING_FACE_API_KEY environment variable is required');
-  }
-  return new InferenceClient(apiKey);
-}
-
 // Mock response for testing when no API is available
 function createMockResponse(words: Word[]): AITemplate[] {
   console.log('🎭 Using mock response for testing');
@@ -139,40 +130,27 @@ function createMockResponse(words: Word[]): AITemplate[] {
   }));
 }
 
-// Call Hugging Face Inference Providers API
-async function callHuggingFaceAPI(words: Word[]): Promise<AITemplate[]> {
-  let client;
-  try {
-    client = getInferenceClient();
-  } catch {
+// Call the Gemini API (via the shared generateText helper)
+async function callGeminiAPI(words: Word[]): Promise<AITemplate[]> {
+  if (!process.env.GEMINI_API_KEY) {
     console.warn(
-      '⚠️ Hugging Face API key missing. Falling back to mock response for testing.',
+      '⚠️ Gemini API key missing. Falling back to mock response for testing.',
     );
     return createMockResponse(words);
   }
 
   const prompt = createBatchPrompt(words);
 
-  console.log('🔍 Calling Hugging Face Inference Providers API...');
+  console.log('🔍 Calling Gemini API...');
   console.log('- Words:', words.map((w) => w.enUS).join(', '));
   console.log('- Prompt length:', prompt.length);
 
-  const response = await client.chatCompletion({
-    provider: 'novita',
-    model: 'meta-llama/Llama-3.3-70B-Instruct',
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-    max_tokens: 2000,
+  const content = await generateText(prompt, {
+    maxOutputTokens: 8192,
     temperature: 0.7,
   });
 
-  console.log('📥 Response received from Hugging Face API');
-
-  const content = response.choices[0].message.content || '';
+  console.log('📥 Response received from Gemini API');
   console.log('📝 Raw response:', content);
 
   // Try to parse JSON response
@@ -204,7 +182,7 @@ async function callHuggingFaceAPI(words: Word[]): Promise<AITemplate[]> {
 async function processBatch(words: Word[]): Promise<AITemplate[]> {
   console.log(`📝 Processing batch of ${words.length} words`);
 
-  const templates = await callHuggingFaceAPI(words);
+  const templates = await callGeminiAPI(words);
 
   console.log(`✅ Generated ${templates.length} templates for batch`);
   return templates;
@@ -282,18 +260,18 @@ export async function POST(request: NextRequest) {
       }
 
       // Never let the mock fallback back a one-click "fix this report" action
-      if (!process.env.HUGGING_FACE_API_KEY) {
+      if (!process.env.GEMINI_API_KEY) {
         return NextResponse.json(
           {
             error:
-              'HUGGING_FACE_API_KEY is not configured, so a real question cannot be regenerated.',
+              'GEMINI_API_KEY is not configured, so a real question cannot be regenerated.',
           },
           { status: 503 },
         );
       }
 
       try {
-        const newTemplates = await callHuggingFaceAPI(targets);
+        const newTemplates = await callGeminiAPI(targets);
 
         const validationError = validateRegeneratedTemplates(
           targets,

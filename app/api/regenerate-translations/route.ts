@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { InferenceClient } from '@huggingface/inference';
+import { generateText } from '../gemini';
 
 interface Translation {
   enUS: string;
@@ -9,14 +9,6 @@ interface Translation {
 // Keep individual requests small so one bad AI response only costs a small
 // batch of words, not the whole invalid-word set.
 const MAX_WORDS_PER_REQUEST = 20;
-
-function getInferenceClient(): InferenceClient {
-  const apiKey = process.env.HUGGING_FACE_API_KEY;
-  if (!apiKey) {
-    throw new Error('HUGGING_FACE_API_KEY environment variable is required');
-  }
-  return new InferenceClient(apiKey);
-}
 
 function createTranslationPrompt(words: string[]): string {
   return `You are translating English vocabulary words into Traditional Chinese (zh-TW) for a children's vocabulary learning app (ages 6-12).
@@ -32,26 +24,15 @@ Rules:
 - Do not include explanations or text outside of the JSON array.`;
 }
 
-async function callHuggingFaceForTranslations(
+async function callGeminiForTranslations(
   words: string[],
 ): Promise<Translation[]> {
-  const client = getInferenceClient();
   const prompt = createTranslationPrompt(words);
 
-  const response = await client.chatCompletion({
-    provider: 'novita',
-    model: 'meta-llama/Llama-3.3-70B-Instruct',
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-    max_tokens: 1000,
+  const content = await generateText(prompt, {
+    maxOutputTokens: 4096,
     temperature: 0.3,
   });
-
-  const content = response.choices[0].message.content || '';
 
   const jsonMatch = content.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
@@ -119,11 +100,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Never let a mock/fallback response silently write a fake translation.
-    if (!process.env.HUGGING_FACE_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         {
           error:
-            'HUGGING_FACE_API_KEY is not configured, so translations cannot be regenerated.',
+            'GEMINI_API_KEY is not configured, so translations cannot be regenerated.',
         },
         { status: 503 },
       );
@@ -131,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     const requested = words.map((w: unknown) => String(w));
 
-    const translations = await callHuggingFaceForTranslations(requested);
+    const translations = await callGeminiForTranslations(requested);
     const validationError = validateTranslations(requested, translations);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 500 });
