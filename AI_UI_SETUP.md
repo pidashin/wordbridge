@@ -4,11 +4,11 @@ This document explains how to set up and use the AI template generation feature 
 
 ## Overview
 
-The AI template generation feature allows you to automatically generate fill-in-the-blank quiz templates for words using AI services. The system uses Hugging Face Inference API as the primary provider with a robust fallback system.
+The AI template generation feature allows you to automatically generate fill-in-the-blank quiz templates for words using AI services. The system uses the Google Gemini API (free tier) with a fallback to mock responses when no API key is configured.
 
 ## Features
 
-- **AI Template Generation**: Generate quiz templates using Hugging Face Inference API
+- **AI Template Generation**: Generate quiz templates using the Google Gemini API
 - **Fallback System**: Automatically falls back to mock responses if API is unavailable
 - **Real-time Progress**: Live progress updates during generation with detailed status
 - **Batch Processing**: Processes words in batches of 5 to optimize API usage
@@ -23,20 +23,22 @@ The AI template generation feature allows you to automatically generate fill-in-
 Create a `.env.local` file in the project root with the following variables:
 
 ```env
-# Hugging Face API (Primary)
-HUGGING_FACE_API_KEY=your_hugging_face_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Optional: override the primary text model (default: gemini-3.5-flash-lite,
+# which falls back to gemini-2.5-flash on error)
+# GEMINI_TEXT_MODEL=gemini-3.5-flash-lite
 ```
 
 ### 2. API Keys
 
-#### Hugging Face API
+#### Gemini API
 
-1. Go to [Hugging Face](https://huggingface.co/)
-2. Create an account and go to Settings > Access Tokens
-3. Create a new token with read permissions
-4. Add it to your `.env.local` file
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Sign in and create an API key (the free tier is sufficient)
+3. Add it to your `.env.local` file as `GEMINI_API_KEY`
 
-**Note**: The system only requires Hugging Face API key. If the API is unavailable, it will automatically fall back to mock responses.
+**Note**: The system only requires the Gemini API key. If the key is not set, template generation falls back to mock responses.
 
 ## Usage
 
@@ -71,8 +73,8 @@ The status section shows:
 1. **Load Words**: Reads all words from the `Word` Prisma table via GraphQL API
 2. **Check Existing**: Skips words that already have AI templates in the `AITemplate` Prisma table
 3. **Batch Processing**: Processes words in batches of 5
-4. **AI Generation**: Calls Hugging Face Inference API to generate templates
-5. **Fallback**: Uses mock responses if Hugging Face API fails
+4. **AI Generation**: Calls the Gemini API to generate templates
+5. **Fallback**: Uses mock responses if no Gemini API key is configured
 6. **Save Results**: Saves generated templates to the `AITemplate` Prisma table
 7. **GraphQL Integration**: Templates are immediately available via GraphQL API
 
@@ -173,15 +175,11 @@ app/
 Use the provided test scripts to debug API issues:
 
 ```bash
-# Test Hugging Face API directly
-npm run test:hf
-
 # Test Next.js API route (requires dev server running)
 npm run test:api
 ```
 
 **Available test scripts:**
-- `test:hf` - Tests Hugging Face Inference API directly
 - `test:api` - Tests the Next.js API route (requires dev server running)
 
 ### Manual Testing
@@ -196,11 +194,11 @@ npm run test:api
 
 ### Common Issues
 
-1. **404 Errors from Hugging Face API**
+1. **Errors from the Gemini API**
 
-   - The Hugging Face Inference API might be down
-   - The system will automatically fall back to mock responses
-   - Check the browser console for detailed error messages
+   - The helper tries `gemini-3.5-flash-lite` and then `gemini-2.5-flash`; the server log shows which model succeeded or failed
+   - Free-tier rate limits or quota exhaustion can make every model fail; wait and retry
+   - Check the browser console and server log for detailed error messages
 
 2. **API Key Issues**
 

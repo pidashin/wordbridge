@@ -12,7 +12,7 @@ extracted into this standalone repo.
 - **Next.js** – React framework for server-side rendering and API routes.
 - **GraphQL** (Apollo Server + Client) – API layer for words, AI templates, and exam data.
 - **Prisma** (SQLite via libSQL) – exam history persistence.
-- **Hugging Face Inference API** – AI-generated fill-in-the-blank quiz templates.
+- **Google Gemini API** (free tier) – AI-generated fill-in-the-blank quiz templates.
 - **Docker** – containerized deployment.
 
 ## Setup & Installation
@@ -27,7 +27,7 @@ extracted into this standalone repo.
    npm install
    ```
 3. Copy `.env.example` to `.env.local` and fill in your own values (see
-   [AI_UI_SETUP.md](./AI_UI_SETUP.md) for the Hugging Face API key).
+   [AI_UI_SETUP.md](./AI_UI_SETUP.md) for the Gemini API key).
 4. Create the local SQLite database (exam history — `User`/`ExamHistory` tables):
    ```sh
    npx prisma db push

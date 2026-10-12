@@ -10,7 +10,7 @@ Standalone vocabulary-learning app, extracted from `pidashin/portfolio`
   Apollo Client (`@apollo/client`, `graphql-tag`)
 - Prisma (`@prisma/client` + `@prisma/adapter-libsql`) over SQLite (`@libsql/client`) —
   exam history only (`User`, `ExamHistory` models)
-- Hugging Face Inference API (`@huggingface/inference`) — AI quiz template generation
+- Google Gemini API (`@google/genai`, free tier) — AI quiz template generation and translation regeneration
 - Tailwind CSS, ESLint (`next/core-web-vitals` + Prettier), Prettier
 - Docker for deployment
 
@@ -46,7 +46,7 @@ No automated test suite exists yet.
 - Ask before modifying `prisma/schema.prisma`, Docker/deploy config, or
   anything that would touch production data once this is deployed.
 - Touch only what the task asks for.
-- Verify external APIs (Hugging Face, Prisma, Apollo) against official docs
+- Verify external APIs (Gemini, Prisma, Apollo) against official docs
   before use — don't guess method signatures.
 
 ## Domain Knowledge
