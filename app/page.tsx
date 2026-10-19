@@ -156,6 +156,12 @@ const MainPage = () => {
             >
               Start Exam
             </Link>
+            <Link
+              className="px-6 py-3 bg-green-500 text-white font-semibold rounded-md hover:bg-green-600 transition text-xl"
+              href="/runner"
+            >
+              Word Runner
+            </Link>
             <button
               onClick={handleLogout}
               className="text-gray-500 hover:text-gray-700 underline text-sm"
