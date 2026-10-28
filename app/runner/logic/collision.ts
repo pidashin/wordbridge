@@ -58,6 +58,10 @@ export class Stumble {
     this.left = this.seconds;
   }
 
+  cancel(): void {
+    this.left = 0;
+  }
+
   speedFactor(dt: number): number {
     if (this.left <= 0) return 1;
     this.left = Math.max(0, this.left - dt);

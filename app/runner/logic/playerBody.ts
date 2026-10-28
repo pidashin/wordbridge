@@ -1,12 +1,13 @@
 // Pure runner physics: no Phaser imports. Elevation is the feet height above
-// the base ground line (positive = up), matching terrainGenerator.
+// the flat base ground line (positive = up), matching terrainGenerator.
 
 export type PlayerBodyParams = {
   gravity: number;
   jumpVelocity: number;
   cutVelocity: number;
   bufferSeconds: number;
-  groundSnap: number;
+  coyoteSeconds: number;
+  fallLimit: number;
   doubleJump: boolean;
 };
 
@@ -15,7 +16,11 @@ export type PlayerInput = {
   jumpHeld: boolean;
 };
 
-export type PlayerStep = { jumped: boolean; landed: boolean };
+export type PlayerStep = { jumped: boolean; landed: boolean; fell: boolean };
+
+// Height of whatever holds the feet at x given where they were; -Infinity
+// over a gap.
+export type SupportFn = (x: number, feet: number) => number;
 
 export class PlayerBody {
   x: number;
@@ -23,6 +28,7 @@ export class PlayerBody {
   vy = 0;
   grounded = true;
   private bufferLeft = 0;
+  private coyoteLeft = 0;
   private airJumpsLeft = 0;
 
   constructor(
@@ -32,51 +38,75 @@ export class PlayerBody {
     this.x = startX;
   }
 
+  // Back on solid ground at x (after falling into a gap).
+  respawn(x: number): void {
+    this.x = x;
+    this.elevation = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.bufferLeft = 0;
+    this.coyoteLeft = 0;
+  }
+
   update(
     dt: number,
     input: PlayerInput,
     runSpeed: number,
-    surfaceAt: (x: number) => number,
+    supportAt: SupportFn,
   ): PlayerStep {
     const p = this.p;
-    const step: PlayerStep = { jumped: false, landed: false };
+    const step: PlayerStep = { jumped: false, landed: false, fell: false };
 
     this.x += runSpeed * dt;
     this.bufferLeft = input.jumpPressed
       ? p.bufferSeconds
       : Math.max(0, this.bufferLeft - dt);
-    const surface = surfaceAt(this.x);
 
     if (this.grounded) {
-      if (this.bufferLeft > 0) {
-        this.startJump(step);
-        this.airJumpsLeft = p.doubleJump ? 1 : 0;
-      } else if (this.elevation - surface > p.groundSnap) {
-        this.grounded = false; // surface fell away faster than the snap
+      const support = supportAt(this.x, this.elevation);
+      if (support < this.elevation - 0.5) {
+        // Ran off an edge: still allowed a jump for a moment (coyote time).
+        this.grounded = false;
         this.vy = 0;
         this.airJumpsLeft = 0;
+        this.coyoteLeft = p.coyoteSeconds;
       } else {
-        this.elevation = surface;
-        return step;
+        this.elevation = support;
+        if (this.bufferLeft > 0) {
+          this.startJump(step);
+          this.airJumpsLeft = p.doubleJump ? 1 : 0;
+        } else {
+          return step;
+        }
       }
-    } else if (input.jumpPressed && this.airJumpsLeft > 0) {
-      this.airJumpsLeft -= 1;
-      this.startJump(step);
+    }
+
+    if (!this.grounded && !step.jumped) {
+      this.coyoteLeft = Math.max(0, this.coyoteLeft - dt);
+      if (this.coyoteLeft > 0 && this.bufferLeft > 0) {
+        this.startJump(step);
+      } else if (input.jumpPressed && this.airJumpsLeft > 0) {
+        this.airJumpsLeft -= 1;
+        this.startJump(step);
+      }
     }
 
     if (this.vy > p.cutVelocity && !input.jumpHeld) this.vy = p.cutVelocity;
 
+    const before = this.elevation;
     this.vy -= p.gravity * dt;
     this.elevation += this.vy * dt;
 
-    if (this.elevation <= surface) {
-      this.elevation = surface;
-      if (this.vy <= 0) {
+    if (this.vy <= 0) {
+      const support = supportAt(this.x, before);
+      if (this.elevation <= support) {
+        this.elevation = support;
         this.vy = 0;
         this.grounded = true;
         step.landed = true;
       }
     }
+    if (this.elevation < p.fallLimit) step.fell = true;
     return step;
   }
 
@@ -84,6 +114,7 @@ export class PlayerBody {
     this.vy = this.p.jumpVelocity;
     this.grounded = false;
     this.bufferLeft = 0;
+    this.coyoteLeft = 0;
     step.jumped = true;
   }
 }

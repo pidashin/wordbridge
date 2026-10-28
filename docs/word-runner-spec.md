@@ -61,17 +61,35 @@ vocabulary words from the wordbridge word list before a timed round ends.
 
 Single jump only in v1 (double jump = config flag, default off).
 
-### Terrain and obstacles
+### Terrain, platforms and gaps (revised 2026-10-28)
 
-- Ground is built from chunks joined end to end: flat, rolling hill, step up,
-  step down, shallow pit, low block.
-- Nothing is lethal. Hitting a block or falling into a pit only **slows** the
-  character briefly (speed ×0.4 for ~0.8 s); a pit pops the character back up
-  onto the far rim. No time penalty.
-- **Reachability invariant (must hold for every generated stretch):** every
-  letter can be collected with a normal jump. Concretely: step height ≤ 60%
-  of max jump apex; letter height above the local surface ≤ 80% of max jump
-  apex; blocks/pits are jumpable at base speed.
+- **The ground is flat** (one baseline height, no hills or slopes). The
+  parallax background hills stay; only the running route is flat.
+- The route is chunks joined end to end, Mario-style:
+  - **flat** run (plain ground, optionally with a low block to jump over);
+  - **gap** (a hole in the ground the player must jump over);
+  - **platform** (a raised ledge: jump up onto it, then jump again to reach
+    a letter above it). Platforms are one-way (you can jump up through them
+    and land on top). Optionally a two-step staircase of platforms.
+- **Falling into a gap = respawn, not failure.** When the character falls
+  below the ground it respawns on the solid flat ground **behind the gap**
+  (the side it came from, at a safe spot clear of blocks and platforms), with
+  a short respawn effect (e.g. sparkle ring / pop-in) and ~1 s of blinking
+  invulnerability. No time penalty and no lost letters (the lost run time is
+  the cost). Every gap is preceded by enough plain flat ground to always have
+  a safe respawn spot.
+- Hitting a block still only slows the character (speed ×0.4 for ~0.8 s).
+- **Reachability invariant (every generated stretch):**
+  - a gap is clearable at base speed with a normal jump (width ≤ ~70% of the
+    shortest jump's airborne distance, plus a little coyote time for
+    forgiveness);
+  - a platform top is reachable with a normal jump (height ≤ ~60% of the max
+    jump apex); a staircase step likewise relative to the step below;
+  - every letter is collectable: letter height above the surface it belongs
+    to (ground, platform top, or the arc over a gap) ≤ ~80% of the max jump
+    apex measured from that surface;
+  - platform letters sit high enough that you need to be *on* the platform
+    (second jump) to get them.
 
 ### Spelling
 
@@ -85,15 +103,19 @@ Single jump only in v1 (double jump = config flag, default off).
 
 ### Letter spawning
 
+- Letters are **sparse**: the character runs a short stretch before meeting
+  the next letter (target spacing about 450–800 px, roughly 1.5–3 s of
+  running at base speed; tunable). Letters do not come in dense clusters.
 - Letters spawn lazily about 1.5 screen widths ahead of the player.
 - A pickup that is still beyond the right screen edge is **provisional**:
   when the target changes (slot filled or new word), the spawner may rewrite
   provisional letters so the current target letter always appears at least
-  once in the next ~2 screen widths.
+  once in the next ~2 screen widths (with sparse letters, make the next
+  letter the target if needed).
 - Distractors are 40–60% of spawned letters (tunable). Look-alike/sound-alike
   bias (b/d, p/q) is a later difficulty option.
-- Letters sit at one of three height bands (ground, low jump, high jump) on
-  the local surface — never inside solid ground.
+- Placement: on the ground at a low height, in the arc over a gap, and above
+  platforms (needs the second jump). Never inside solid ground or blocks.
 
 ### Timer and scoring
 
@@ -261,8 +283,8 @@ The repo has no automated tests and this spec does not add a test framework
 
 ## 12. Milestones
 
-1. **Prototype:** route, Phaser mount/unmount, auto-run, jump, flat ground
-   with hills, camera follow, `meadow` background + character art
+1. **Prototype:** route, Phaser mount/unmount, auto-run, jump, flat ground,
+   camera follow, `meadow` background + character art
    (**art checkpoint**).
 2. **Letters:** word pool, one word, spawner, slot + meaning HUD, wrong-letter
    penalty.

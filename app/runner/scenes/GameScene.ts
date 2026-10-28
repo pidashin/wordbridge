@@ -10,7 +10,7 @@ import { LetterSpawner } from '../logic/letterSpawner';
 import type { Band, Letter } from '../logic/letterSpawner';
 import { PlayerBody } from '../logic/playerBody';
 import { RoundTimer } from '../logic/roundTimer';
-import { createRng } from '../logic/terrainGenerator';
+import { createRng, respawnX } from '../logic/terrainGenerator';
 import type { Block, Terrain } from '../logic/terrainGenerator';
 import { WordDeck } from '../logic/wordPool';
 import { WordProgress } from '../logic/wordProgress';
@@ -26,6 +26,7 @@ import { COLORS, addButton, addText } from '../view/ui';
 import { GAME_SCENE_KEY, RESULT_SCENE_KEY, TITLE_SCENE_KEY } from './keys';
 
 const DEPTH_PLAYER = 20;
+const DEPTH_IN_PIT = 8;
 const DEPTH_FX = 90;
 const DEPTH_FLASH = 99;
 const DEPTH_PAUSE = 200;
@@ -54,6 +55,7 @@ export class GameScene extends Phaser.Scene {
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
   private pointerPressed = false;
   private animTime = 0;
+  private invulnerableLeft = 0;
   private tilt = 0;
   private paused = false;
   private ended = false;
@@ -70,6 +72,7 @@ export class GameScene extends Phaser.Scene {
     this.wrongTotal = 0;
     this.pointerPressed = false;
     this.animTime = 0;
+    this.invulnerableLeft = 0;
     this.tilt = 0;
     this.paused = false;
     this.ended = false;
@@ -86,12 +89,19 @@ export class GameScene extends Phaser.Scene {
       obstacles,
       letters: lc,
       jump,
+      respawn,
     } = RUNNER_CONFIG;
     const theme = DEFAULT_THEME;
 
     this.background = new Background(this, theme);
     this.terrain = createTerrain(-player.startX - game.width / 2);
-    this.terrain.ensureCovered(player.startX + RUNNER_CONFIG.terrain.aheadPx);
+    // Cover the first spawn reach too: letters can land up to one spacing past
+    // the spawn horizon.
+    this.terrain.ensureCovered(
+      player.startX +
+        Math.max(RUNNER_CONFIG.terrain.aheadPx, lc.aheadScreens * game.width) +
+        lc.spacing[1],
+    );
     this.terrainView = new TerrainView(this, this.terrain, theme);
 
     this.runner = new PlayerBody(
@@ -100,7 +110,8 @@ export class GameScene extends Phaser.Scene {
         jumpVelocity: jump.velocity,
         cutVelocity: jump.cutVelocity,
         bufferSeconds: jump.bufferSeconds,
-        groundSnap: jump.groundSnap,
+        coyoteSeconds: jump.coyoteSeconds,
+        fallLimit: respawn.fallLimit,
         doubleJump: jump.doubleJump,
       },
       player.startX,
@@ -134,7 +145,7 @@ export class GameScene extends Phaser.Scene {
         aheadPx: lc.aheadScreens * game.width,
         targetWindowPx: lc.targetWindowScreens * game.width,
         distractorRatio: [...lc.distractorRatio],
-        gap: [...lc.gap],
+        spacing: [...lc.spacing],
         firstLetterOffset: lc.firstLetterOffset,
         despawnBehind: lc.despawnBehind,
         provisionalMargin: lc.provisionalMargin,
@@ -146,13 +157,13 @@ export class GameScene extends Phaser.Scene {
           high: lc.bandFractions.high * MAX_JUMP_APEX,
         } satisfies Record<Band, number>,
         bandWeights: { ...lc.bandWeights },
+        platformHeights: [
+          lc.platformFractions[0] * MAX_JUMP_APEX,
+          lc.platformFractions[1] * MAX_JUMP_APEX,
+        ],
       },
       createRng(Math.floor(Math.random() * 0x7fffffff)),
-      {
-        surfaceAt: (x) => this.terrain.elevationAt(x),
-        maxSurfaceIn: (a, b) => this.terrain.maxElevationIn(a, b),
-        blockTopIn: (a, b) => this.terrain.blockTopIn(a, b),
-      },
+      { describeAt: (x, r) => this.terrain.describeAt(x, r) },
       player.startX,
     );
     this.spawner.setTarget(this.progress.target);
@@ -200,12 +211,14 @@ export class GameScene extends Phaser.Scene {
     const pressed = this.consumeJumpPress();
     const held =
       this.jumpKeys.some((k) => k.isDown) || this.input.activePointer.isDown;
-    this.runner.update(
+    const step = this.runner.update(
       dt,
       { jumpPressed: pressed, jumpHeld: held },
       run.speed * this.stumble.speedFactor(dt),
-      (x) => this.terrain.elevationAt(x),
+      (x, feet) => this.terrain.supportAt(x, feet),
     );
+    this.invulnerableLeft = Math.max(0, this.invulnerableLeft - dt);
+    if (step.fell) this.respawn();
 
     this.terrain.ensureCovered(
       this.runner.x + RUNNER_CONFIG.terrain.aheadPx + 600,
@@ -231,9 +244,47 @@ export class GameScene extends Phaser.Scene {
     this.background.update(cam.scrollX);
   }
 
+  // Fell into a gap: back onto solid ground, no penalty, brief invulnerability.
+  private respawn(): void {
+    const { respawn, game, camera } = RUNNER_CONFIG;
+    const gap = this.terrain.nearestGap(this.runner.x);
+    if (!gap) return;
+    this.runner.respawn(respawnX(gap, respawn.offsetX));
+    this.stumble.cancel();
+    this.invulnerableLeft = respawn.invulnerableSeconds;
+    this.sprite.setPosition(this.runner.x, RUNNER_CONFIG.terrain.baseY);
+    this.cameras.main.scrollX =
+      this.runner.x - game.width * camera.playerScreenX;
+    this.respawnEffect(this.runner.x, RUNNER_CONFIG.terrain.baseY - 50);
+  }
+
+  // Expanding ring, sparkles and a pop-in.
+  private respawnEffect(x: number, y: number): void {
+    const ring = this.add
+      .circle(x, y, 20)
+      .setStrokeStyle(6, 0xffffff)
+      .setDepth(DEPTH_FX);
+    this.tweens.add({
+      targets: ring,
+      scale: 4,
+      alpha: 0,
+      duration: 500,
+      ease: 'Quad.Out',
+      onComplete: () => ring.destroy(),
+    });
+    this.burstStars(x, y, 12);
+    this.sprite.setScale(0.3);
+    this.tweens.add({
+      targets: this.sprite,
+      scale: 1,
+      duration: 300,
+      ease: 'Back.Out',
+    });
+  }
+
   private checkBlocks(): void {
     const ob = RUNNER_CONFIG.obstacles;
-    if (this.stumble.active) return;
+    if (this.stumble.active || this.invulnerableLeft > 0) return;
     for (const block of this.terrain.blocksIn(
       this.runner.x - 30,
       this.runner.x + 30,
@@ -327,27 +378,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private celebrate(word: string): void {
-    const colors = [0xffd93b, 0xff8a3d, 0x7cfc5a, 0x6ec6ff, 0xff7ab8];
-    const x = this.sprite.x;
-    const y = this.sprite.y - 50;
-    for (let i = 0; i < 18; i++) {
-      const angle = (i / 18) * Math.PI * 2 + Math.random() * 0.3;
-      const dist = 70 + Math.random() * 90;
-      const star = this.add
-        .star(x, y, 5, 4, 10, colors[i % colors.length])
-        .setDepth(DEPTH_FX);
-      this.tweens.add({
-        targets: star,
-        x: x + Math.cos(angle) * dist,
-        y: y + Math.sin(angle) * dist - 20,
-        angle: 180,
-        alpha: 0,
-        scale: 0.3,
-        duration: 650 + Math.random() * 250,
-        ease: 'Quad.Out',
-        onComplete: () => star.destroy(),
-      });
-    }
+    this.burstStars(this.sprite.x, this.sprite.y - 50, 18);
     const banner = addText(
       this,
       RUNNER_CONFIG.game.width / 2,
@@ -377,6 +408,28 @@ export class GameScene extends Phaser.Scene {
       duration: 350,
       onComplete: () => banner.destroy(),
     });
+  }
+
+  private burstStars(x: number, y: number, count: number): void {
+    const colors = [0xffd93b, 0xff8a3d, 0x7cfc5a, 0x6ec6ff, 0xff7ab8];
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+      const dist = 70 + Math.random() * 90;
+      const star = this.add
+        .star(x, y, 5, 4, 10, colors[i % colors.length])
+        .setDepth(DEPTH_FX);
+      this.tweens.add({
+        targets: star,
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist - 20,
+        angle: 180,
+        alpha: 0,
+        scale: 0.3,
+        duration: 650 + Math.random() * 250,
+        ease: 'Quad.Out',
+        onComplete: () => star.destroy(),
+      });
+    }
   }
 
   private floatText(x: number, y: number, text: string, color: string): void {
@@ -422,25 +475,27 @@ export class GameScene extends Phaser.Scene {
       this.sprite.setAlpha(Math.sin(timeMs / 40) > 0 ? 1 : 0.55);
       targetTilt = 0;
     } else {
-      this.sprite.setAlpha(1);
+      this.sprite.setAlpha(
+        this.invulnerableLeft > 0 && Math.sin(timeMs / 45) > 0 ? 0.35 : 1,
+      );
       if (this.runner.grounded) {
         this.animTime += dt;
         const frame =
           Math.floor(this.animTime * player.runFramesPerSecond) %
           PLAYER_RUN_KEYS.length;
         this.sprite.setTexture(PLAYER_RUN_KEYS[frame]);
-        const x = this.runner.x;
-        const slope =
-          (this.terrain.elevationAt(x + 10) -
-            this.terrain.elevationAt(x - 10)) /
-          20;
-        targetTilt = -Math.atan(slope) * player.slopeTilt;
+        targetTilt = 0;
       } else {
         this.sprite.setTexture(PLAYER_JUMP_KEY);
         targetTilt = Phaser.Math.Clamp(-this.runner.vy / 2200, -0.4, 0.4);
       }
     }
 
+    // Below the ground rim the character is falling inside a pit: draw it
+    // behind the ground so it disappears behind the far wall.
+    this.sprite.setDepth(
+      this.runner.elevation < -8 ? DEPTH_IN_PIT : DEPTH_PLAYER,
+    );
     this.tilt += (targetTilt - this.tilt) * Math.min(1, dt * 12);
     this.sprite.setRotation(this.tilt);
   }

@@ -1,50 +1,48 @@
 import * as Phaser from 'phaser';
 import { RUNNER_CONFIG } from '../config';
 import type { Theme } from '../themes';
-import { chunkElevation } from '../logic/terrainGenerator';
-import type { Terrain, TerrainChunk } from '../logic/terrainGenerator';
+import type {
+  Gap,
+  Platform,
+  Terrain,
+  TerrainChunk,
+} from '../logic/terrainGenerator';
 
+const DEPTH_PIT = 5;
 const DEPTH_BODY = 10;
 const DEPTH_GRASS = 11;
-// The dirt body starts this far below the surface; the grass strips cover
+const DEPTH_PLATFORM = 12;
+// The dirt body starts this far below the surface; the grass strip covers
 // the seam.
 const BODY_INSET = 8;
-// Only the top of the tile (grass, dirt, pebbles) is drawn rotated; the flat
-// body below it is filled in code, so no rotated edge shows deep in the dirt.
+// Only the top of the ground tile (grass, dirt, pebbles) is drawn as a strip;
+// the flat dirt body below it is filled in code.
 const STRIP_HEIGHT = 46;
+const STRIP_FRAME = 'top';
 
-type ChunkVisual = {
-  body: Phaser.GameObjects.Graphics;
-  strips: Phaser.GameObjects.Image[];
-};
+type ChunkVisual = { objects: Phaser.GameObjects.GameObject[] };
 
-// Draws terrain chunks as a flat dirt body plus 8px grass strips, each
-// rotated to the local slope. Chunks are built when they near the camera and
-// destroyed when the terrain prunes them.
+// Draws the flat route per chunk: grass-topped ground in runs between gaps,
+// dark pits, one-way platforms and low blocks. Chunks are built when they near
+// the camera and destroyed when the terrain prunes them.
 export class TerrainView {
   private visuals = new Map<TerrainChunk, ChunkVisual>();
-  private frameCount: number;
 
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly terrain: Terrain,
     private readonly theme: Theme,
   ) {
-    const { stripWidth } = RUNNER_CONFIG.terrain;
     const texture = scene.textures.get(theme.ground.key);
-    const source = texture.getSourceImage();
-    this.frameCount = Math.floor(source.width / stripWidth);
-    for (let i = 0; i < this.frameCount; i++) {
-      if (!texture.has(this.frameName(i))) {
-        texture.add(
-          this.frameName(i),
-          0,
-          i * stripWidth,
-          0,
-          stripWidth,
-          STRIP_HEIGHT,
-        );
-      }
+    if (!texture.has(STRIP_FRAME)) {
+      texture.add(
+        STRIP_FRAME,
+        0,
+        0,
+        0,
+        texture.getSourceImage().width,
+        STRIP_HEIGHT,
+      );
     }
   }
 
@@ -53,7 +51,7 @@ export class TerrainView {
 
     for (const [chunk, visual] of this.visuals) {
       if (!loaded.has(chunk)) {
-        this.destroyVisual(visual);
+        visual.objects.forEach((o) => o.destroy());
         this.visuals.delete(chunk);
       }
     }
@@ -63,62 +61,132 @@ export class TerrainView {
       if (chunk.endX < viewLeft - margin || chunk.startX > viewRight + margin) {
         continue;
       }
-      this.visuals.set(chunk, this.build(chunk));
+      this.visuals.set(chunk, { objects: this.build(chunk) });
     }
   }
 
-  private frameName(i: number): string {
-    return `strip${i}`;
+  private build(chunk: TerrainChunk): Phaser.GameObjects.GameObject[] {
+    const objects: Phaser.GameObjects.GameObject[] = [];
+    const { baseY } = RUNNER_CONFIG.terrain;
+
+    // Solid ground = the chunk minus its gaps.
+    let x = chunk.startX;
+    for (const gap of chunk.gaps) {
+      this.addGround(objects, x, gap.x);
+      this.addPit(objects, gap);
+      x = gap.x + gap.width;
+    }
+    this.addGround(objects, x, chunk.endX);
+    this.addLips(objects, chunk);
+
+    for (const p of chunk.platforms) this.addPlatform(objects, p);
+
+    const block = RUNNER_CONFIG.obstacles.block;
+    for (const b of chunk.blocks) {
+      objects.push(
+        this.scene.add
+          .image(b.x, baseY + 1, 'block')
+          .setOrigin(0, 1)
+          .setDisplaySize(block.width, b.height)
+          .setDepth(DEPTH_PLATFORM),
+      );
+    }
+    return objects;
   }
 
-  private build(chunk: TerrainChunk): ChunkVisual {
-    const { baseY, stripWidth } = RUNNER_CONFIG.terrain;
+  private addGround(
+    objects: Phaser.GameObjects.GameObject[],
+    x0: number,
+    x1: number,
+  ): void {
+    if (x1 - x0 <= 0) return;
+    const { baseY } = RUNNER_CONFIG.terrain;
     const { height } = RUNNER_CONFIG.game;
-    const surfaceY = (x: number) =>
-      baseY -
-      chunkElevation(chunk, Phaser.Math.Clamp(x, chunk.startX, chunk.endX));
-
     const body = this.scene.add.graphics().setDepth(DEPTH_BODY);
     body.fillStyle(
       Phaser.Display.Color.HexStringToColor(this.theme.ground.bodyColor).color,
     );
-    const strips: Phaser.GameObjects.Image[] = [];
-
-    const count = Math.ceil((chunk.endX - chunk.startX) / stripWidth);
-    const half = stripWidth / 2;
-    for (let i = 0; i < count; i++) {
-      const x = chunk.startX + (i + 0.5) * stripWidth;
-      const y = surfaceY(x);
-      const angle = Math.atan2(
-        surfaceY(x + half) - surfaceY(x - half),
-        stripWidth,
-      );
-
-      body.fillRect(
-        x - half - 0.5,
-        y + BODY_INSET,
-        stripWidth + 1,
-        height - y - BODY_INSET + 1,
-      );
-
-      const frameIndex =
-        ((Math.floor(x / stripWidth) % this.frameCount) + this.frameCount) %
-        this.frameCount;
-      const strip = this.scene.add
-        .image(x, y, this.theme.ground.key, this.frameName(frameIndex))
-        .setOrigin(0.5, 0)
-        .setRotation(angle)
-        // Slight overlap hides hairline gaps between rotated neighbours.
-        .setScale((stripWidth + 1.5) / stripWidth, 1)
-        .setDepth(DEPTH_GRASS);
-      strips.push(strip);
-    }
-
-    return { body, strips };
+    body.fillRect(x0, baseY + BODY_INSET, x1 - x0, height - baseY);
+    const strip = this.scene.add
+      .tileSprite(
+        x0,
+        baseY,
+        x1 - x0,
+        STRIP_HEIGHT,
+        this.theme.ground.key,
+        STRIP_FRAME,
+      )
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_GRASS);
+    // Keep the tile pattern fixed to the world so chunks line up.
+    strip.tilePositionX = x0;
+    objects.push(body, strip);
   }
 
-  private destroyVisual(visual: ChunkVisual): void {
-    visual.body.destroy();
-    visual.strips.forEach((s) => s.destroy());
+  private addPit(objects: Phaser.GameObjects.GameObject[], gap: Gap): void {
+    const { baseY } = RUNNER_CONFIG.terrain;
+    const { height } = RUNNER_CONFIG.game;
+    const pit = this.scene.add
+      .rectangle(
+        gap.x,
+        baseY,
+        gap.width,
+        height - baseY,
+        Phaser.Display.Color.HexStringToColor(this.theme.pit.color).color,
+      )
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_PIT);
+    objects.push(pit);
+  }
+
+  // Rounded grass lip on the ground edge beside each gap.
+  private addLips(
+    objects: Phaser.GameObjects.GameObject[],
+    chunk: TerrainChunk,
+  ): void {
+    const { baseY } = RUNNER_CONFIG.terrain;
+    const lipWidth = this.scene.textures
+      .get(this.theme.pit.lip.key)
+      .getSourceImage().width;
+    for (const g of chunk.gaps) {
+      objects.push(
+        this.scene.add
+          .image(g.x - lipWidth, baseY, this.theme.pit.lip.key)
+          .setOrigin(0, 0)
+          .setDepth(DEPTH_GRASS + 0.5),
+        this.scene.add
+          .image(g.x + g.width, baseY, this.theme.pit.lip.key)
+          .setOrigin(0, 0)
+          .setFlipX(true)
+          .setDepth(DEPTH_GRASS + 0.5),
+      );
+    }
+  }
+
+  private addPlatform(
+    objects: Phaser.GameObjects.GameObject[],
+    p: Platform,
+  ): void {
+    const { baseY, platform } = RUNNER_CONFIG.terrain;
+    const t = this.theme.platform;
+    const y = baseY - p.top;
+    const add = (key: string, x: number) =>
+      objects.push(
+        this.scene.add
+          .image(x, y, key)
+          .setOrigin(0, 0)
+          .setDepth(DEPTH_PLATFORM),
+      );
+    const segments = Math.round(
+      (p.width - 2 * platform.capWidth) / platform.segmentWidth,
+    );
+    add(t.left.key, p.x);
+    for (let i = 0; i < segments; i++) {
+      add(t.mid.key, p.x + platform.capWidth + i * platform.segmentWidth);
+    }
+    add(
+      t.right.key,
+      p.x + platform.capWidth + segments * platform.segmentWidth,
+    );
   }
 }

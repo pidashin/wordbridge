@@ -1,38 +1,39 @@
 // Pure letter spawning: no Phaser imports. Elevation is the letter centre's
-// height above the base ground line.
+// height above the flat base ground line.
 
-import type { Rng } from './terrainGenerator';
+import type { Rng, SurfaceInfo } from './terrainGenerator';
 
 export type Band = 'ground' | 'low' | 'high';
+export type LetterSite = 'ground' | 'platform' | 'gap';
 
 export type Letter = {
   id: number;
   char: string;
   x: number;
   elevation: number;
-  band: Band;
+  site: LetterSite;
 };
 
 export type LetterOptions = {
   aheadPx: number;
   targetWindowPx: number;
   distractorRatio: [number, number];
-  gap: [number, number];
+  spacing: [number, number];
   firstLetterOffset: number;
   despawnBehind: number;
   provisionalMargin: number;
   radius: number;
   blockClearance: number;
-  // Centre height above the local surface for each band, in px.
+  // Centre height above the ground for each band, in px.
   bandHeights: Record<Band, number>;
   bandWeights: Record<Band, number>;
+  // Min/max centre height above a platform top, in px.
+  platformHeights: [number, number];
 };
 
 // What the spawner needs to know about the world, supplied by the scene.
 export type LetterEnv = {
-  surfaceAt(x: number): number;
-  maxSurfaceIn(x0: number, x1: number): number;
-  blockTopIn(x0: number, x1: number): number;
+  describeAt(x: number, radius: number): SurfaceInfo | null;
 };
 
 export type SpawnerUpdate = {
@@ -47,7 +48,7 @@ const BANDS: Band[] = ['ground', 'low', 'high'];
 export class LetterSpawner {
   letters: Letter[] = [];
   private nextId = 1;
-  private cursor: number;
+  private lastX: number;
   private target: string | null = null;
   private readonly distractorRatio: number;
 
@@ -57,7 +58,8 @@ export class LetterSpawner {
     private readonly env: LetterEnv,
     startX: number,
   ) {
-    this.cursor = startX + o.firstLetterOffset;
+    // lastX is the previous letter; the first one lands firstLetterOffset on.
+    this.lastX = startX + o.firstLetterOffset - o.spacing[0];
     this.distractorRatio =
       o.distractorRatio[0] +
       rng() * (o.distractorRatio[1] - o.distractorRatio[0]);
@@ -86,12 +88,11 @@ export class LetterSpawner {
     }
     this.letters = keep;
 
-    while (this.cursor < playerX + this.o.aheadPx) {
-      const letter = this.spawnAt(this.cursor);
+    while (this.lastX + this.o.spacing[0] < playerX + this.o.aheadPx) {
+      const letter = this.spawnNext(playerX);
+      if (!letter) break;
       this.letters.push(letter);
       result.spawned.push(letter);
-      const [gapMin, gapMax] = this.o.gap;
-      this.cursor += gapMin + this.rng() * (gapMax - gapMin);
     }
 
     // Every update: the player can also pass the only target letter by.
@@ -123,14 +124,38 @@ export class LetterSpawner {
     result.rewritten.push(provisional);
   }
 
-  private spawnAt(x: number): Letter {
+  private spawnNext(playerX: number): Letter | null {
+    const spot = this.findSpot();
+    if (!spot) return null;
+    this.lastX = spot.x;
+
+    // If no target letter is coming up yet, the next letter is the target.
+    const targetAhead =
+      this.target !== null &&
+      this.letters.some((l) => l.x >= playerX && l.char === this.target);
     const isDistractor = this.rng() < this.distractorRatio;
     const char =
-      this.target && !isDistractor
+      this.target && (!targetAhead || !isDistractor)
         ? this.target
-        : this.randomChar(isDistractor);
-    const { band, elevation } = this.place(x);
-    return { id: this.nextId++, char, x, elevation, band };
+        : this.randomChar(this.target !== null);
+    return { id: this.nextId++, char, ...this.place(spot) };
+  }
+
+  // A random x within the spacing window where a letter can sit; falls back
+  // to scanning the window so spacing never leaves the configured bounds.
+  private findSpot(): { x: number; info: SurfaceInfo } | null {
+    const [min, max] = this.o.spacing;
+    const r = this.o.radius;
+    for (let i = 0; i < 8; i++) {
+      const x = this.lastX + min + this.rng() * (max - min);
+      const info = this.env.describeAt(x, r);
+      if (info) return { x, info };
+    }
+    for (let x = this.lastX + min; x <= this.lastX + max; x += 10) {
+      const info = this.env.describeAt(x, r);
+      if (info) return { x, info };
+    }
+    return null;
   }
 
   private randomChar(avoidTarget: boolean): string {
@@ -140,37 +165,50 @@ export class LetterSpawner {
     }
   }
 
-  // Pick a band, then lift the letter if the chosen height would put it
-  // inside the ground or a block.
-  private place(x: number): { band: Band; elevation: number } {
+  // Height by site: bands over the ground (lifted clear of blocks), the arc
+  // over a gap (low/high band), or above a platform (needs the second jump).
+  private place(spot: { x: number; info: SurfaceInfo }): {
+    x: number;
+    elevation: number;
+    site: LetterSite;
+  } {
+    const { x, info } = spot;
     const r = this.o.radius;
-    const surface = this.env.maxSurfaceIn(x - r, x + r);
-    const blockTop = this.env.blockTopIn(x - r - 4, x + r + 4);
-    const floor =
-      Math.max(surface, blockTop > 0 ? blockTop : 0) +
-      r +
-      (blockTop > 0 ? this.o.blockClearance : 0);
 
-    const preferred = this.pickBand();
+    if (info.kind === 'platform') {
+      const [lo, hi] = this.o.platformHeights;
+      return {
+        x,
+        site: 'platform',
+        elevation: info.base + lo + this.rng() * (hi - lo),
+      };
+    }
+
+    const preferred = this.pickBand(info.kind === 'gap');
+    if (info.kind === 'gap') {
+      return { x, site: 'gap', elevation: this.o.bandHeights[preferred] };
+    }
+
+    const floor =
+      info.blockTop > 0 ? info.blockTop + r + this.o.blockClearance : r;
     const ordered = [preferred, ...BANDS.filter((b) => b !== preferred)];
     for (const band of ordered) {
-      const elevation = this.bandElevation(band, x);
-      if (elevation >= floor) return { band, elevation };
+      const elevation = this.o.bandHeights[band];
+      if (elevation >= floor) return { x, site: 'ground', elevation };
     }
-    return { band: 'high', elevation: this.bandElevation('high', x) };
+    return { x, site: 'ground', elevation: this.o.bandHeights.high };
   }
 
-  private bandElevation(band: Band, x: number): number {
-    return this.env.surfaceAt(x) + this.o.bandHeights[band];
-  }
-
-  private pickBand(): Band {
+  private pickBand(airOnly: boolean): Band {
     const w = this.o.bandWeights;
-    let roll = this.rng() * (w.ground + w.low + w.high);
+    const weights: Record<Band, number> = airOnly
+      ? { ground: 0, low: w.low, high: w.high }
+      : w;
+    let roll = this.rng() * (weights.ground + weights.low + weights.high);
     for (const band of BANDS) {
-      roll -= w[band];
+      roll -= weights[band];
       if (roll < 0) return band;
     }
-    return 'ground';
+    return 'low';
   }
 }
