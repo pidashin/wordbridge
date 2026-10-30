@@ -5,13 +5,19 @@
 export const USE_DEMO_WORDS = true;
 
 const GRAVITY = 2000; // px/s²
-const JUMP_VELOCITY = 800; // px/s, full-hold jump
-const CUT_VELOCITY = 440; // upward speed after releasing the button early
+const JUMP_VELOCITY = 1000; // px/s, full-hold jump
+const CUT_VELOCITY = 530; // upward speed after releasing the button early
 const RUN_SPEED = 280; // px/s
 
-// Airborne distance of the shortest (tap) jump at base speed. Gaps stay under
-// 70% of it so a tap always clears them, with coyote time as extra grace.
-const TAP_AIR_DISTANCE = ((2 * CUT_VELOCITY) / GRAVITY) * RUN_SPEED;
+// Real jump numbers everything else is derived from.
+const FULL_APEX = (JUMP_VELOCITY * JUMP_VELOCITY) / (2 * GRAVITY); // 250 px
+const FULL_AIR_DISTANCE = ((2 * JUMP_VELOCITY) / GRAVITY) * RUN_SPEED; // 280 px
+
+// Fox as drawn: ears to paws. Platforms leave this plus a margin underneath.
+const FOX_HEIGHT = 94;
+const PLATFORM_THICKNESS = 32;
+const PLATFORM_CLEARANCE = 12;
+const MAX_STEP_FRACTION = 0.6;
 
 export const RUNNER_CONFIG = {
   game: {
@@ -37,6 +43,7 @@ export const RUNNER_CONFIG = {
     startX: 300,
     // Sprite is 112px square with the paws ~4px above the bottom edge.
     size: 112,
+    height: FOX_HEIGHT,
     footMargin: 4,
     runFramesPerSecond: 12,
   },
@@ -54,27 +61,55 @@ export const RUNNER_CONFIG = {
     behindPx: 640,
     startFlatWidth: 1100,
     // Relative chance of each chunk type after the opening flat run.
-    chunkWeights: { flat: 0.2, blocks: 0.25, gap: 0.3, platform: 0.25 },
+    chunkWeights: {
+      flat: 0.12,
+      blocks: 0.2,
+      mud: 0.15,
+      gap: 0.2,
+      platform: 0.13,
+      platgap: 0.1,
+      stairs: 0.1,
+    },
     flatWidth: [320, 640] as [number, number],
     blocksWidth: [560, 960] as [number, number],
-    // A gap is a hole in the ground. Plain flat ground (no block, no
-    // platform) of padWidth lies on both sides, so there is always a safe
-    // respawn spot.
+    // A gap is a hole in the ground. Up to ~72% of the full jump's airborne
+    // distance, so a held jump clears every gap and a tap may not clear the
+    // widest. Plain flat ground (no block, mud or platform) lies before it and,
+    // longer, after it: the respawn spot is past the far edge.
     gap: {
-      width: [64, Math.floor(0.7 * TAP_AIR_DISTANCE)] as [number, number],
-      padWidth: [230, 320] as [number, number],
+      width: [96, Math.floor(0.72 * FULL_AIR_DISTANCE)] as [number, number],
+      padBefore: [230, 320] as [number, number],
+      padAfter: [330, 420] as [number, number],
     },
-    // One-way ledges. Top is the height above the ground; the maximum is
+    // Mud patches on flat ground, kept away from chunk ends.
+    mud: {
+      chunkWidth: [700, 1100] as [number, number],
+      width: [160, 260] as [number, number],
+      edgeMargin: 150,
+      minSpacing: 300,
+      // Run speed factor while touching mud, and how long it lingers after.
+      speedFactor: 0.5,
+      recoverSeconds: 0.3,
+    },
+    // One-way ledges, high enough to run underneath. Top is the height above
+    // the ground: at least thickness + fox height + margin, at most
     // maxStepFraction of the real jump apex (spec §4).
     platform: {
-      top: [64, 96] as [number, number],
+      top: [
+        FOX_HEIGHT + PLATFORM_CLEARANCE + PLATFORM_THICKNESS,
+        MAX_STEP_FRACTION * FULL_APEX,
+      ] as [number, number],
       segments: [3, 5] as [number, number],
       segmentWidth: 64,
       capWidth: 32,
-      thickness: 44,
+      thickness: PLATFORM_THICKNESS,
       padWidth: [170, 260] as [number, number],
+      // Staircase: tier 2 starts this fraction into tier 1 and reaches at
+      // least stairOverhang past its end. Both steps equal one platform top.
+      stairOffset: [0.4, 0.6] as [number, number],
+      stairOverhang: 96,
     },
-    maxStepFraction: 0.6,
+    maxStepFraction: MAX_STEP_FRACTION,
     // null = new random layout every run.
     seed: null as number | null,
   },
@@ -83,12 +118,9 @@ export const RUNNER_CONFIG = {
     // Keep blocks away from chunk ends so landings stay clean.
     edgeMargin: 180,
     minSpacing: 260,
-    // Hit = slow down briefly; no time penalty.
-    slowFactor: 0.4,
-    slowSeconds: 0.8,
-    footHalfWidth: 18,
-    hitLeniency: 6,
-    hitHeadroom: 8,
+    // Crates are solid: running into one stops the fox until it jumps. The
+    // block must stay clearable by the shortest tap jump (apex >= height + 15).
+    footHalfWidth: 36,
   },
   round: {
     seconds: 180,
@@ -102,9 +134,9 @@ export const RUNNER_CONFIG = {
   },
   respawn: {
     // Where the character reappears after falling into a gap, measured from
-    // the gap edge: negative = behind the gap (side it came from), positive =
-    // past the far edge. Flip the sign to change the rule.
-    offsetX: -150,
+    // the gap edge: positive = past the far edge, negative = behind the gap
+    // (side it came from).
+    offsetX: 150,
     invulnerableSeconds: 1,
     // Falling this far below the ground (px) triggers the respawn.
     fallLimit: -240,
@@ -119,11 +151,11 @@ export const RUNNER_CONFIG = {
     aheadScreens: 1.5,
     // The current target letter must appear within this many screen widths.
     targetWindowScreens: 2,
-    distractorRatio: [0.4, 0.6] as [number, number],
-    // Distance between consecutive letters: sparse, a stretch of running
-    // (1.6-2.9 s at base speed) between letters.
-    spacing: [450, 800] as [number, number],
-    firstLetterOffset: 650,
+    distractorRatio: [0.3, 0.5] as [number, number],
+    // Distance between consecutive letters: about one per screen of running
+    // (3.6-5 s at base speed).
+    spacing: [1000, 1400] as [number, number],
+    firstLetterOffset: 900,
     despawnBehind: 160,
     // Letters this far past the right screen edge may still be rewritten.
     provisionalMargin: 60,
@@ -131,12 +163,35 @@ export const RUNNER_CONFIG = {
     // jump apex. High must stay <= 0.8 (spec §4).
     bandFractions: { ground: 0.25, low: 0.62, high: 0.8 },
     bandWeights: { ground: 0.3, low: 0.4, high: 0.3 },
-    // Letters above a platform: height over the platform top as a fraction of
-    // the max jump apex (<= 0.8), so the second jump from the platform is
-    // needed to reach them.
-    platformFractions: [0.7, 0.8] as [number, number],
+    // Near a gap or platform, chance that the next letter is placed on that
+    // feature (on the ledge, in its transit arcs, or over the gap).
+    featureBias: 0.6,
+    // Letters above a platform use the same bands from its top. Under a
+    // platform only the ground band fits below its underside.
+    underChance: 0.25,
+    // Transit letters sit on real jump arcs around a platform: before its
+    // near edge (arc of a full jump taking off takeoffDistance earlier) and
+    // past its far edge (the drop after running off the end).
+    transit: {
+      approachDistance: [50, 130] as [number, number],
+      takeoffDistance: 150,
+      departDistance: [30, 90] as [number, number],
+      chance: 0.7,
+    },
     // Extra clearance between a letter and a block top.
     blockClearance: 6,
+    // Gap between a letter's top and a platform underside when under it.
+    underMargin: 10,
+    // Lowest screen y a letter centre may have (keeps letters under the HUD
+    // and on screen); bands above it are skipped.
+    ceilingY: 150,
+    // Placement margins around platforms and gaps (px).
+    layout: {
+      platformInnerMargin: 80,
+      edgeFringe: 30,
+      landingZone: 110,
+      gapInnerMargin: 12,
+    },
   },
   ui: {
     font: 'system-ui, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif',
@@ -144,4 +199,4 @@ export const RUNNER_CONFIG = {
   },
 } as const;
 
-export const MAX_JUMP_APEX = (JUMP_VELOCITY * JUMP_VELOCITY) / (2 * GRAVITY);
+export const MAX_JUMP_APEX = FULL_APEX;

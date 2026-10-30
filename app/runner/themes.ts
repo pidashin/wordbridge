@@ -14,6 +14,8 @@ export type Theme = {
   platform: { left: ArtFile; mid: ArtFile; right: ArtFile };
   // Gaps: dark pit interior plus a lip cap on the ground edge beside it.
   pit: { lip: ArtFile; color: string };
+  // Mud patch drawn on the ground surface, stretched to the patch width.
+  mud: ArtFile;
 };
 
 export const MEADOW: Theme = {
@@ -21,6 +23,13 @@ export const MEADOW: Theme = {
   name: 'Meadow',
   sky: { top: '#6ec6ff', bottom: '#d7f0ff' },
   layers: [
+    // Pale, small far clouds drift slower than the near ones.
+    {
+      key: 'meadow-clouds-far',
+      file: 'meadow-clouds-far.svg',
+      scrollFactor: 0.02,
+      y: 50,
+    },
     {
       key: 'meadow-clouds',
       file: 'meadow-clouds.svg',
@@ -50,6 +59,7 @@ export const MEADOW: Theme = {
     mid: { key: 'meadow-platform-mid', file: 'platform_mid.svg' },
     right: { key: 'meadow-platform-right', file: 'platform_right.svg' },
   },
+  mud: { key: 'meadow-mud', file: 'mud.svg' },
   pit: {
     lip: { key: 'meadow-pit-lip', file: 'pit_lip.svg' },
     color: '#2a1b14',

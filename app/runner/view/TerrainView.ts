@@ -12,6 +12,9 @@ const DEPTH_PIT = 5;
 const DEPTH_BODY = 10;
 const DEPTH_GRASS = 11;
 const DEPTH_PLATFORM = 12;
+// Above the grass, below the fox.
+const DEPTH_MUD = 11.8;
+const MUD_HEIGHT = 26;
 // The dirt body starts this far below the surface; the grass strip covers
 // the seam.
 const BODY_INSET = 8;
@@ -80,6 +83,15 @@ export class TerrainView {
     this.addLips(objects, chunk);
 
     for (const p of chunk.platforms) this.addPlatform(objects, p);
+    for (const m of chunk.mud) {
+      objects.push(
+        this.scene.add
+          .image(m.x, baseY - 4, this.theme.mud.key)
+          .setOrigin(0, 0)
+          .setDisplaySize(m.width, MUD_HEIGHT)
+          .setDepth(DEPTH_MUD),
+      );
+    }
 
     const block = RUNNER_CONFIG.obstacles.block;
     for (const b of chunk.blocks) {

@@ -28,6 +28,7 @@ export class BootScene extends Phaser.Scene {
         theme.platform.mid,
         theme.platform.right,
         theme.pit.lip,
+        theme.mud,
       ]) {
         this.load.svg(art.key, art.file);
       }

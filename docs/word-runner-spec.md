@@ -61,35 +61,60 @@ vocabulary words from the wordbridge word list before a timed round ends.
 
 Single jump only in v1 (double jump = config flag, default off).
 
-### Terrain, platforms and gaps (revised 2026-10-28)
+### Terrain, platforms, gaps and mud (revised 2026-10-30)
 
 - **The ground is flat** (one baseline height, no hills or slopes). The
   parallax background hills stay; only the running route is flat.
 - The route is chunks joined end to end, Mario-style:
   - **flat** run (plain ground, optionally with a low block to jump over);
+  - **mud** patch on the ground (see below);
   - **gap** (a hole in the ground the player must jump over);
-  - **platform** (a raised ledge: jump up onto it, then jump again to reach
-    a letter above it). Platforms are one-way (you can jump up through them
-    and land on top). Optionally a two-step staircase of platforms.
+  - **platform** (a raised ledge). Platforms are one-way (you can jump up
+    through them and land on top) and **high enough to walk under normally**
+    (underside clearance above the fox's height plus margin). The player may
+    run underneath or jump up onto it. From a platform the character can
+    jump again.
+  - **platform + gap + platform:** two platforms at the same height with a
+    gap in the air between them (width clearable by a jump from a platform
+    top, same limits as ground gaps). Falling lands on the ground below, so
+    it is not a respawn.
+  - **two-tier staircase:** platform tier 1 then, up and ahead, tier 2
+    (at most **two tiers**). Both steps have the **same height**: ground to
+    tier 1 = tier 1 to tier 2. Each step is reachable with a held jump; the
+    top tier must stay on screen (below the HUD) including its letters.
+- **Mud:** a patch of the ground surface. While the fox is touching it
+  (on the ground inside the patch) the run speed is reduced (about ×0.5) and
+  returns to normal shortly after leaving; jumping over it avoids the
+  slowdown. It does not cost time directly and does not block anything.
+  Mud is never placed where a gap or platform edge starts or on the respawn
+  spot.
+- **Blocks (wooden crates) are solid** (revised 2026-10-30). The character
+  cannot run through one: running into its side **stops the character there**
+  (it stays stuck against the block, the timer keeps running) until the
+  player jumps. No time penalty and no knock-back beyond being stopped. A
+  jump that rises above the top lets the character move on and **land on top
+  of the block**, and from the top it can **jump again**; running off the far
+  edge drops it back to the ground. Block height must be clearable by a
+  normal tap jump (apex >= block height + margin) so the player can never be
+  permanently stuck.
 - **Falling into a gap = respawn, not failure.** When the character falls
-  below the ground it respawns on the solid flat ground **behind the gap**
-  (the side it came from, at a safe spot clear of blocks and platforms), with
-  a short respawn effect (e.g. sparkle ring / pop-in) and ~1 s of blinking
-  invulnerability. No time penalty and no lost letters (the lost run time is
-  the cost). Every gap is preceded by enough plain flat ground to always have
-  a safe respawn spot.
-- Hitting a block still only slows the character (speed ×0.4 for ~0.8 s).
+  below the ground it respawns on the solid flat ground **on the far side of
+  the gap** (past the far edge, NOT back at the take-off side), with a short
+  respawn effect (sparkle ring / pop-in) and ~1 s of blinking invulnerability.
+  No time penalty and no lost letters. The respawn spot is clear of blocks,
+  mud, platforms and the next gap; every gap is followed by enough plain
+  flat ground for that.
+- **Jump feel:** the max jump apex is raised (target about 230 px, tunable,
+  from the real physics) so a platform whose top is ~130–150 px high is
+  reachable with a held jump while still letting the fox pass underneath.
+  Tap = a smaller hop, hold = the full jump.
 - **Reachability invariant (every generated stretch):**
-  - a gap is clearable at base speed with a normal jump (width ≤ ~70% of the
-    shortest jump's airborne distance, plus a little coyote time for
-    forgiveness);
-  - a platform top is reachable with a normal jump (height ≤ ~60% of the max
-    jump apex); a staircase step likewise relative to the step below;
-  - every letter is collectable: letter height above the surface it belongs
-    to (ground, platform top, or the arc over a gap) ≤ ~80% of the max jump
-    apex measured from that surface;
-  - platform letters sit high enough that you need to be *on* the platform
-    (second jump) to get them.
+  - a gap is clearable at base speed with a held (full) jump with margin;
+    gaps are wider than before (up to ~70–75% of the full jump's airborne
+    distance, a tap jump may not clear the widest ones);
+  - a platform top is reachable with a normal held jump (top <= ~60% of the
+    max apex); underside clearance >= fox height + margin;
+  - every letter is collectable.
 
 ### Spelling
 
@@ -103,19 +128,28 @@ Single jump only in v1 (double jump = config flag, default off).
 
 ### Letter spawning
 
-- Letters are **sparse**: the character runs a short stretch before meeting
-  the next letter (target spacing about 450–800 px, roughly 1.5–3 s of
-  running at base speed; tunable). Letters do not come in dense clusters.
+- Letters are **sparse**: about **one letter per screen width** of running
+  (target spacing about 1000–1400 px at a 1280 px wide screen, ~3.5–5 s at
+  base speed; tunable). No dense clusters.
 - Letters spawn lazily about 1.5 screen widths ahead of the player.
-- A pickup that is still beyond the right screen edge is **provisional**:
-  when the target changes (slot filled or new word), the spawner may rewrite
-  provisional letters so the current target letter always appears at least
-  once in the next ~2 screen widths (with sparse letters, make the next
-  letter the target if needed).
-- Distractors are 40–60% of spawned letters (tunable). Look-alike/sound-alike
+- A pickup still beyond the right screen edge is **provisional**: when the
+  target changes the spawner may rewrite provisional letters so the current
+  target letter appears at least once in the next ~2 screen widths (with
+  sparse letters, make the next letter the target if needed).
+- Distractors are 30–50% of spawned letters (tunable). Look-alike/sound-alike
   bias (b/d, p/q) is a later difficulty option.
-- Placement: on the ground at a low height, in the arc over a gap, and above
-  platforms (needs the second jump). Never inside solid ground or blocks.
+- **Placement.** Letter heights are measured from the surface they belong to
+  with the same three bands as ground letters (ground, low jump, high jump):
+  - on the ground;
+  - **above a platform with the same offsets from the platform top** as
+    ground letters have from the ground (so you stand/jump on the platform to
+    get them);
+  - **in transit around a platform**: in the jump arc up to the platform
+    (before its near edge) or the arc off its far edge, positions you only
+    touch mid-jump / mid-drop, not by standing on the platform;
+  - in the arc over a gap.
+  Never inside solid ground or blocks, never inside a platform, and ground
+  letters under a platform stay below its underside.
 
 ### Timer and scoring
 

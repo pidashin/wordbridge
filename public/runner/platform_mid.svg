@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="44" viewBox="0 0 64 44">
-    <rect y="14" width="64" height="30" fill="#9a6b3f"/>
-    <rect y="35" width="64" height="9" fill="#7f5632"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32">
+    <rect y="14" width="64" height="18" fill="#9a6b3f"/>
+    <rect y="24" width="64" height="8" fill="#7f5632"/>
     <path d="M0 0H64V16A8 8 0 0 1 48 16A8 8 0 0 1 32 16A8 8 0 0 1 16 16A8 8 0 0 1 0 16Z" fill="#5fbf4b"/>
     <path d="M0 15A8 8 0 0 0 16 15A8 8 0 0 0 32 15A8 8 0 0 0 48 15A8 8 0 0 0 64 15V19A8 8 0 0 1 48 19A8 8 0 0 1 32 19A8 8 0 0 1 16 19A8 8 0 0 1 0 19Z" fill="#4aa63a"/>
     <rect width="64" height="5" fill="#86d96a"/>
-    <ellipse cx="14" cy="27" rx="4" ry="2.6" fill="#b5834f"/><ellipse cx="42" cy="29" rx="3" ry="2" fill="#86592f"/><ellipse cx="55" cy="25" rx="3.5" ry="2.2" fill="#b5834f"/>
+    <ellipse cx="14" cy="24" rx="4" ry="2" fill="#b5834f"/><ellipse cx="46" cy="22" rx="3" ry="1.8" fill="#86592f"/>
 </svg>

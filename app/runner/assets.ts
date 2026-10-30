@@ -19,12 +19,11 @@ export const PLAYER_RUN_KEYS = [
   'fox_run_3',
 ] as const;
 export const PLAYER_JUMP_KEY = 'fox_jump';
-export const PLAYER_STUMBLE_KEY = 'fox_stumble';
 
 // Theme-independent art. Sizes rasterise the 128px-viewBox fox at the size it
 // is drawn, so nothing is resampled at run time.
 export const COMMON_ASSETS: SvgAsset[] = [
-  ...[...PLAYER_RUN_KEYS, PLAYER_JUMP_KEY, PLAYER_STUMBLE_KEY].map((key) => ({
+  ...[...PLAYER_RUN_KEYS, PLAYER_JUMP_KEY].map((key) => ({
     key,
     file: `${key}.svg`,
     width: PLAYER_SIZE,

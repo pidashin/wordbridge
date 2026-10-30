@@ -1,7 +1,5 @@
-// Pure hit tests: no Phaser imports. Elevations are feet/centre heights above
-// the base ground line (positive = up).
-
-import type { Block } from './terrainGenerator';
+// Pure hit tests and effects: no Phaser imports. Elevations are feet/centre
+// heights above the base ground line (positive = up).
 
 export type HitShape = { playerCenterOffset: number; playerRadius: number };
 
@@ -19,52 +17,23 @@ export function touchesLetter(
   return dx * dx + dy * dy < reach * reach;
 }
 
-export type BlockHitRules = {
-  footHalfWidth: number;
-  hitLeniency: number;
-  hitHeadroom: number;
-};
-
-// Feet box against a block. Slightly forgiving at the edges and top.
-export function hitsBlock(
-  playerX: number,
-  feetElevation: number,
-  block: Block,
-  rules: BlockHitRules,
-): boolean {
-  const left = playerX - rules.footHalfWidth + rules.hitLeniency;
-  const right = playerX + rules.footHalfWidth - rules.hitLeniency;
-  return (
-    right > block.x &&
-    left < block.x + block.width &&
-    feetElevation < block.height - rules.hitHeadroom
-  );
-}
-
-// Short slowdown after a block hit; the round timer is unaffected.
-export class Stumble {
+// Mud: slows the runner while the feet touch it, with a short linger after
+// leaving. Jumping over a patch avoids it.
+export class MudEffect {
   private left = 0;
 
   constructor(
-    private readonly seconds: number,
-    private readonly slowFactor: number,
+    private readonly speedFactor: number,
+    private readonly recoverSeconds: number,
   ) {}
 
   get active(): boolean {
     return this.left > 0;
   }
 
-  start(): void {
-    this.left = this.seconds;
-  }
-
-  cancel(): void {
-    this.left = 0;
-  }
-
-  speedFactor(dt: number): number {
-    if (this.left <= 0) return 1;
-    this.left = Math.max(0, this.left - dt);
-    return this.slowFactor;
+  speed(dt: number, touchingMud: boolean): number {
+    if (touchingMud) this.left = this.recoverSeconds;
+    else this.left = Math.max(0, this.left - dt);
+    return this.left > 0 ? this.speedFactor : 1;
   }
 }

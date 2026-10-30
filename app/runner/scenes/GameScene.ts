@@ -1,21 +1,18 @@
 import * as Phaser from 'phaser';
-import {
-  PLAYER_JUMP_KEY,
-  PLAYER_RUN_KEYS,
-  PLAYER_STUMBLE_KEY,
-} from '../assets';
-import { MAX_JUMP_APEX, RUNNER_CONFIG } from '../config';
-import { hitsBlock, Stumble, touchesLetter } from '../logic/collision';
+import { PLAYER_JUMP_KEY, PLAYER_RUN_KEYS } from '../assets';
+import { RUNNER_CONFIG } from '../config';
+import { MudEffect, touchesLetter } from '../logic/collision';
 import { LetterSpawner } from '../logic/letterSpawner';
-import type { Band, Letter } from '../logic/letterSpawner';
+import type { Letter } from '../logic/letterSpawner';
 import { PlayerBody } from '../logic/playerBody';
 import { RoundTimer } from '../logic/roundTimer';
 import { createRng, respawnX } from '../logic/terrainGenerator';
-import type { Block, Terrain } from '../logic/terrainGenerator';
+import type { Terrain } from '../logic/terrainGenerator';
 import { WordDeck } from '../logic/wordPool';
 import { WordProgress } from '../logic/wordProgress';
 import { SESSION_KEY } from '../session';
 import type { RunnerSession, SpelledWord } from '../session';
+import { letterOptions, terrainReach } from '../letterSetup';
 import { createTerrain } from '../terrainSetup';
 import { DEFAULT_THEME } from '../themes';
 import { Background } from '../view/Background';
@@ -46,8 +43,10 @@ export class GameScene extends Phaser.Scene {
   private deck!: WordDeck;
   private progress!: WordProgress;
   private timer!: RoundTimer;
-  private stumble!: Stumble;
-  private hitBlocks = new Set<Block>();
+  private stuck = false;
+  private mud!: MudEffect;
+  private speedFactor = 1;
+  private splashTimer = 0;
   private spelled: SpelledWord[] = [];
   private wrongTotal = 0;
 
@@ -67,11 +66,13 @@ export class GameScene extends Phaser.Scene {
 
   init(): void {
     this.letterViews = new Map();
-    this.hitBlocks = new Set();
+    this.stuck = false;
     this.spelled = [];
     this.wrongTotal = 0;
     this.pointerPressed = false;
     this.animTime = 0;
+    this.speedFactor = 1;
+    this.splashTimer = 0;
     this.invulnerableLeft = 0;
     this.tilt = 0;
     this.paused = false;
@@ -81,27 +82,13 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.session = this.registry.get(SESSION_KEY) as RunnerSession;
-    const {
-      player,
-      camera,
-      game,
-      round,
-      obstacles,
-      letters: lc,
-      jump,
-      respawn,
-    } = RUNNER_CONFIG;
+    const { player, camera, game, round, obstacles, jump, respawn } =
+      RUNNER_CONFIG;
     const theme = DEFAULT_THEME;
 
     this.background = new Background(this, theme);
     this.terrain = createTerrain(-player.startX - game.width / 2);
-    // Cover the first spawn reach too: letters can land up to one spacing past
-    // the spawn horizon.
-    this.terrain.ensureCovered(
-      player.startX +
-        Math.max(RUNNER_CONFIG.terrain.aheadPx, lc.aheadScreens * game.width) +
-        lc.spacing[1],
-    );
+    this.terrain.ensureCovered(player.startX + terrainReach());
     this.terrainView = new TerrainView(this, this.terrain, theme);
 
     this.runner = new PlayerBody(
@@ -112,6 +99,7 @@ export class GameScene extends Phaser.Scene {
         bufferSeconds: jump.bufferSeconds,
         coyoteSeconds: jump.coyoteSeconds,
         fallLimit: respawn.fallLimit,
+        footHalfWidth: obstacles.footHalfWidth,
         doubleJump: jump.doubleJump,
       },
       player.startX,
@@ -133,7 +121,10 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.scrollY = 0;
 
     this.timer = new RoundTimer(round.seconds);
-    this.stumble = new Stumble(obstacles.slowSeconds, obstacles.slowFactor);
+    this.mud = new MudEffect(
+      RUNNER_CONFIG.terrain.mud.speedFactor,
+      RUNNER_CONFIG.terrain.mud.recoverSeconds,
+    );
     this.deck = new WordDeck(
       this.session.words,
       createRng(Math.floor(Math.random() * 0x7fffffff)),
@@ -141,29 +132,12 @@ export class GameScene extends Phaser.Scene {
     this.progress = new WordProgress(this.deck.next() ?? { en: 'a', zh: '' });
 
     this.spawner = new LetterSpawner(
-      {
-        aheadPx: lc.aheadScreens * game.width,
-        targetWindowPx: lc.targetWindowScreens * game.width,
-        distractorRatio: [...lc.distractorRatio],
-        spacing: [...lc.spacing],
-        firstLetterOffset: lc.firstLetterOffset,
-        despawnBehind: lc.despawnBehind,
-        provisionalMargin: lc.provisionalMargin,
-        radius: lc.radius,
-        blockClearance: lc.blockClearance,
-        bandHeights: {
-          ground: lc.bandFractions.ground * MAX_JUMP_APEX,
-          low: lc.bandFractions.low * MAX_JUMP_APEX,
-          high: lc.bandFractions.high * MAX_JUMP_APEX,
-        } satisfies Record<Band, number>,
-        bandWeights: { ...lc.bandWeights },
-        platformHeights: [
-          lc.platformFractions[0] * MAX_JUMP_APEX,
-          lc.platformFractions[1] * MAX_JUMP_APEX,
-        ],
-      },
+      letterOptions(),
       createRng(Math.floor(Math.random() * 0x7fffffff)),
-      { describeAt: (x, r) => this.terrain.describeAt(x, r) },
+      {
+        describeAt: (x, r) => this.terrain.describeAt(x, r),
+        featuresIn: (a, b) => this.terrain.featuresIn(a, b),
+      },
       player.startX,
     );
     this.spawner.setTarget(this.progress.target);
@@ -211,18 +185,29 @@ export class GameScene extends Phaser.Scene {
     const pressed = this.consumeJumpPress();
     const held =
       this.jumpKeys.some((k) => k.isDown) || this.input.activePointer.isDown;
+    const touchingMud =
+      this.runner.grounded &&
+      this.runner.elevation < 1 &&
+      this.terrain.mudAt(this.runner.x) !== null;
+    this.speedFactor = this.mud.speed(dt, touchingMud);
+    if (touchingMud) this.splash(dt);
     const step = this.runner.update(
       dt,
       { jumpPressed: pressed, jumpHeld: held },
-      run.speed * this.stumble.speedFactor(dt),
-      (x, feet) => this.terrain.supportAt(x, feet),
+      run.speed * this.speedFactor,
+      {
+        supportAt: (x, feet) => this.terrain.supportAt(x, feet),
+        wallLimit: (x0, x1, feet, half) =>
+          this.terrain.wallLimit(x0, x1, feet, half),
+      },
     );
+    // Pushing against a crate's side: stays put (camera and parallax follow
+    // the fox, so they stop too) until the player jumps.
+    this.stuck = step.blocked && this.runner.grounded;
     this.invulnerableLeft = Math.max(0, this.invulnerableLeft - dt);
     if (step.fell) this.respawn();
 
-    this.terrain.ensureCovered(
-      this.runner.x + RUNNER_CONFIG.terrain.aheadPx + 600,
-    );
+    this.terrain.ensureCovered(this.runner.x + terrainReach());
     this.terrain.prune(this.runner.x - RUNNER_CONFIG.terrain.behindPx);
 
     this.sprite.setPosition(
@@ -232,7 +217,6 @@ export class GameScene extends Phaser.Scene {
     this.updateSprite(dt, time);
 
     const cam = this.cameras.main;
-    this.checkBlocks();
     this.checkLetters();
     if (this.ended) return;
     this.syncLetters(
@@ -244,13 +228,39 @@ export class GameScene extends Phaser.Scene {
     this.background.update(cam.scrollX);
   }
 
+  // Little brown droplets thrown up while wading through mud.
+  private splash(dt: number): void {
+    this.splashTimer -= dt;
+    if (this.splashTimer > 0) return;
+    this.splashTimer = 0.09;
+    const baseY = RUNNER_CONFIG.terrain.baseY;
+    for (let i = 0; i < 2; i++) {
+      const drop = this.add
+        .circle(
+          this.runner.x - 10 + Math.random() * 30,
+          baseY + 4,
+          4 + Math.random() * 3,
+          0x6b4a2b,
+        )
+        .setDepth(DEPTH_FX);
+      this.tweens.add({
+        targets: drop,
+        x: drop.x - 20 + Math.random() * 60,
+        y: baseY - 30 - Math.random() * 30,
+        alpha: 0,
+        duration: 380,
+        ease: 'Quad.Out',
+        onComplete: () => drop.destroy(),
+      });
+    }
+  }
+
   // Fell into a gap: back onto solid ground, no penalty, brief invulnerability.
   private respawn(): void {
     const { respawn, game, camera } = RUNNER_CONFIG;
     const gap = this.terrain.nearestGap(this.runner.x);
     if (!gap) return;
     this.runner.respawn(respawnX(gap, respawn.offsetX));
-    this.stumble.cancel();
     this.invulnerableLeft = respawn.invulnerableSeconds;
     this.sprite.setPosition(this.runner.x, RUNNER_CONFIG.terrain.baseY);
     this.cameras.main.scrollX =
@@ -280,23 +290,6 @@ export class GameScene extends Phaser.Scene {
       duration: 300,
       ease: 'Back.Out',
     });
-  }
-
-  private checkBlocks(): void {
-    const ob = RUNNER_CONFIG.obstacles;
-    if (this.stumble.active || this.invulnerableLeft > 0) return;
-    for (const block of this.terrain.blocksIn(
-      this.runner.x - 30,
-      this.runner.x + 30,
-    )) {
-      if (this.hitBlocks.has(block)) continue;
-      if (hitsBlock(this.runner.x, this.runner.elevation, block, ob)) {
-        this.hitBlocks.add(block);
-        this.stumble.start();
-        if (this.hitBlocks.size > 40) this.hitBlocks.clear();
-        break;
-      }
-    }
   }
 
   private checkLetters(): void {
@@ -470,25 +463,24 @@ export class GameScene extends Phaser.Scene {
     const { player } = RUNNER_CONFIG;
     let targetTilt: number;
 
-    if (this.stumble.active) {
-      this.sprite.setTexture(PLAYER_STUMBLE_KEY);
-      this.sprite.setAlpha(Math.sin(timeMs / 40) > 0 ? 1 : 0.55);
+    this.sprite.setAlpha(
+      this.invulnerableLeft > 0 && Math.sin(timeMs / 45) > 0 ? 0.35 : 1,
+    );
+    if (this.stuck) {
+      // Stuck against a crate: standing pose, no run-cycle scrubbing.
+      this.sprite.setTexture(PLAYER_RUN_KEYS[1]);
+      targetTilt = 0;
+    } else if (this.runner.grounded) {
+      // Slower strides while slowed down by mud.
+      this.animTime += dt * this.speedFactor;
+      const frame =
+        Math.floor(this.animTime * player.runFramesPerSecond) %
+        PLAYER_RUN_KEYS.length;
+      this.sprite.setTexture(PLAYER_RUN_KEYS[frame]);
       targetTilt = 0;
     } else {
-      this.sprite.setAlpha(
-        this.invulnerableLeft > 0 && Math.sin(timeMs / 45) > 0 ? 0.35 : 1,
-      );
-      if (this.runner.grounded) {
-        this.animTime += dt;
-        const frame =
-          Math.floor(this.animTime * player.runFramesPerSecond) %
-          PLAYER_RUN_KEYS.length;
-        this.sprite.setTexture(PLAYER_RUN_KEYS[frame]);
-        targetTilt = 0;
-      } else {
-        this.sprite.setTexture(PLAYER_JUMP_KEY);
-        targetTilt = Phaser.Math.Clamp(-this.runner.vy / 2200, -0.4, 0.4);
-      }
+      this.sprite.setTexture(PLAYER_JUMP_KEY);
+      targetTilt = Phaser.Math.Clamp(-this.runner.vy / 2200, -0.4, 0.4);
     }
 
     // Below the ground rim the character is falling inside a pit: draw it
