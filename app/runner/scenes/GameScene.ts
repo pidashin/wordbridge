@@ -27,6 +27,8 @@ const DEPTH_IN_PIT = 8;
 const DEPTH_FX = 90;
 const DEPTH_FLASH = 99;
 const DEPTH_PAUSE = 200;
+// Above the pause shade so the exit button works while paused.
+const DEPTH_EXIT = DEPTH_PAUSE + 5;
 
 export class GameScene extends Phaser.Scene {
   private session!: RunnerSession;
@@ -153,6 +155,17 @@ export class GameScene extends Phaser.Scene {
     this.hud.setWord(this.progress);
     this.hud.setWordsCompleted(0);
     this.hud.setTime(round.seconds);
+
+    // Exit to the title screen, also while paused. Nothing is recorded.
+    const exit = addButton(
+      this,
+      game.width - 36,
+      36,
+      'X',
+      () => this.scene.start(TITLE_SCENE_KEY),
+      { width: 56, height: 56, size: 30, fill: 0x6b7280 },
+    );
+    exit.container.setDepth(DEPTH_EXIT);
 
     this.flash = this.add
       .rectangle(0, 0, game.width, game.height, 0xff2222, 0)
@@ -499,9 +512,18 @@ export class GameScene extends Phaser.Scene {
       this.jumpKeys = [keyboard.addKey(codes.SPACE), keyboard.addKey(codes.UP)];
       this.pauseKeys = [keyboard.addKey(codes.P), keyboard.addKey(codes.ESC)];
     }
-    this.input.on('pointerdown', () => {
-      if (!this.paused && !this.ended) this.pointerPressed = true;
-    });
+    // A press on a button (the exit X, pause menu) must not make the fox jump.
+    this.input.on(
+      'pointerdown',
+      (
+        _pointer: Phaser.Input.Pointer,
+        over: Phaser.GameObjects.GameObject[],
+      ) => {
+        if (over.length === 0 && !this.paused && !this.ended) {
+          this.pointerPressed = true;
+        }
+      },
+    );
   }
 
   private consumeJumpPress(): boolean {

@@ -88,8 +88,13 @@ export function addButton(
 
   bg.setInteractive({ useHandCursor: true });
   bg.on('pointerover', () => enabled && container.setScale(1.05));
+  bg.on('pointerdown', () => enabled && container.setScale(0.94));
   bg.on('pointerout', () => container.setScale(1));
-  bg.on('pointerup', () => enabled && onClick());
+  bg.on('pointerup', () => {
+    if (!enabled) return;
+    container.setScale(1.05);
+    onClick();
+  });
 
   return {
     container,

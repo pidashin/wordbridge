@@ -37,7 +37,8 @@ export class Hud {
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(DEPTH_HUD);
-    this.wordsText = addText(scene, width - 24, 18, '', { size: 34 })
+    // Right-aligned, leaving the far top-right corner to the exit button.
+    this.wordsText = addText(scene, width - 96, 18, '', { size: 34 })
       .setOrigin(1, 0)
       .setScrollFactor(0)
       .setDepth(DEPTH_HUD);

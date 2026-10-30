@@ -4,7 +4,7 @@
     <g id="c2"><circle cx="30" cy="36" r="22"/><circle cx="64" cy="24" r="28"/><circle cx="100" cy="38" r="20"/><rect x="8" y="38" width="112" height="22" rx="11"/></g>
   </defs>
   <g opacity="0.6">
-    <g fill="#cfe6f7"><use href="#c1" transform="translate(70 40) scale(0.6) translate(0 7)"/><use href="#c2" transform="translate(260 90) scale(0.55) translate(0 7)"/><use href="#c1" transform="translate(430 20) scale(0.5) translate(0 7)"/><use href="#c2" transform="translate(600 100) scale(0.6) translate(0 7)"/><use href="#c1" transform="translate(790 50) scale(0.62) translate(0 7)"/><use href="#c2" transform="translate(980 10) scale(0.5) translate(0 7)"/><use href="#c1" transform="translate(1100 100) scale(0.55) translate(0 7)"/></g>
-    <g fill="#ffffff"><use href="#c1" transform="translate(70 40) scale(0.6)"/><use href="#c2" transform="translate(260 90) scale(0.55)"/><use href="#c1" transform="translate(430 20) scale(0.5)"/><use href="#c2" transform="translate(600 100) scale(0.6)"/><use href="#c1" transform="translate(790 50) scale(0.62)"/><use href="#c2" transform="translate(980 10) scale(0.5)"/><use href="#c1" transform="translate(1100 100) scale(0.55)"/></g>
+    <g fill="#cfe6f7"><use href="#c1" transform="translate(40 110) scale(0.6) translate(0 7)"/><use href="#c2" transform="translate(400 20) scale(0.55) translate(0 7)"/><use href="#c1" transform="translate(900 125) scale(0.62) translate(0 7)"/><use href="#c2" transform="translate(1120 15) scale(0.55) translate(0 7)"/></g>
+    <g fill="#ffffff"><use href="#c1" transform="translate(40 110) scale(0.6)"/><use href="#c2" transform="translate(400 20) scale(0.55)"/><use href="#c1" transform="translate(900 125) scale(0.62)"/><use href="#c2" transform="translate(1120 15) scale(0.55)"/></g>
   </g>
 </svg>
