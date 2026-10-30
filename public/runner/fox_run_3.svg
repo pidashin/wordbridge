@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><g transform="translate(6 4) scale(0.95)">
+  <g transform="rotate(4 38 84)">
+    <path d="M40 92 C 24 104, 2 98, 3 76 C 4 58, 14 48, 24 42 C 24 52, 28 58, 36 66 C 42 72, 46 80, 46 86 Z"
+      fill="#f58a1f" stroke="#4a2a18" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M3 76 C 4 58, 14 48, 24 42 C 24 50, 26 56, 30 60 C 20 58, 10 62, 3 76 Z"
+      fill="#fff3dc" stroke="#4a2a18" stroke-width="3.5" stroke-linejoin="round"/>
+  </g>
+  <polyline points="76,98 82,104 80,110" fill="none" stroke="#4a2a18" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="76,98 82,104 80,110" fill="none" stroke="#d9680f" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="81.5" cy="110" rx="7.5" ry="5.8" fill="#6b3a1e" stroke="#4a2a18" stroke-width="3"/>
+  <polyline points="50,98 46,104 46,110" fill="none" stroke="#4a2a18" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="50,98 46,104 46,110" fill="none" stroke="#d9680f" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="47.5" cy="110" rx="7.5" ry="5.8" fill="#6b3a1e" stroke="#4a2a18" stroke-width="3"/>
+  <g transform="translate(0 -4) rotate(0 62 88)">
+    <ellipse cx="62" cy="86" rx="35" ry="24" fill="#f58a1f" stroke="#4a2a18" stroke-width="3.5"/>
+    <path d="M44 100 C 54 108, 78 108, 90 98 C 82 92, 56 92, 44 100 Z" fill="#fff3dc"/>
+    <ellipse cx="62" cy="86" rx="35" ry="24" fill="none" stroke="#4a2a18" stroke-width="3.5"/>
+  </g>
+  <polyline points="84,98 92,102 94,110" fill="none" stroke="#4a2a18" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="84,98 92,102 94,110" fill="none" stroke="#f58a1f" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="95.5" cy="110" rx="7.5" ry="5.8" fill="#6b3a1e" stroke="#4a2a18" stroke-width="3"/>
+  <polyline points="42,98 36,104 34,110" fill="none" stroke="#4a2a18" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="42,98 36,104 34,110" fill="none" stroke="#f58a1f" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="35.5" cy="110" rx="7.5" ry="5.8" fill="#6b3a1e" stroke="#4a2a18" stroke-width="3"/>
+  <g transform="rotate(0 88 62)">
+    <path d="M70 40 L72 8 L94 30 Z" fill="#f58a1f" stroke="#4a2a18" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M75 33 L76 17 L87 29 Z" fill="#6b3a1e"/>
+    <path d="M94 32 L112 10 L116 40 Z" fill="#f58a1f" stroke="#4a2a18" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M100 33 L110 20 L112 35 Z" fill="#6b3a1e"/>
+    <circle cx="90" cy="58" r="28" fill="#f58a1f" stroke="#4a2a18" stroke-width="3.5"/>
+    <path d="M66 66 C 74 78, 90 84, 106 76 C 112 72, 116 66, 116 62 C 104 58, 92 66, 78 58 C 72 54, 68 58, 66 66 Z"
+      fill="#fff3dc"/>
+    <path d="M90 58 m-28 0 a28 28 0 1 0 56 0 a28 28 0 1 0 -56 0" fill="none" stroke="#4a2a18" stroke-width="3.5"/>
+    <ellipse cx="116" cy="62" rx="5.2" ry="4.2" fill="#3a2220"/>
+    <path d="M108 71 Q 112 75 117 71" fill="none" stroke="#4a2a18" stroke-width="2.6" stroke-linecap="round"/>
+    <circle cx="92" cy="66" r="4.4" fill="#ff9fa8" opacity="0.8"/>
+    <ellipse cx="98" cy="52" rx="5.4" ry="7.2" fill="#3a2220"/>
+         <circle cx="100" cy="48.8" r="2.3" fill="#fff"/>
+  </g></g>
+</svg>

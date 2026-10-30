@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="260" viewBox="0 0 1280 260">
+  <defs>
+    <g id="c1"><circle cx="40" cy="44" r="28"/><circle cx="82" cy="30" r="34"/><circle cx="128" cy="44" r="26"/><rect x="14" y="44" width="140" height="28" rx="14"/></g>
+    <g id="c2"><circle cx="30" cy="36" r="22"/><circle cx="64" cy="24" r="28"/><circle cx="100" cy="38" r="20"/><rect x="8" y="38" width="112" height="22" rx="11"/></g>
+  </defs>
+  <g fill="#cfe6f7"><use href="#c1" transform="translate(150 40) translate(0 7)"/><use href="#c2" transform="translate(470 120) translate(0 7)"/><use href="#c1" transform="translate(780 20) scale(1.2) translate(0 7)"/><use href="#c2" transform="translate(1090 110) scale(1.1) translate(0 7)"/><use href="#c2" transform="translate(640 175) scale(0.75) translate(0 7)"/></g>
+  <g fill="#ffffff"><use href="#c1" transform="translate(150 40)"/><use href="#c2" transform="translate(470 120)"/><use href="#c1" transform="translate(780 20) scale(1.2)"/><use href="#c2" transform="translate(1090 110) scale(1.1)"/><use href="#c2" transform="translate(640 175) scale(0.75)"/></g>
+</svg>
