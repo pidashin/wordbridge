@@ -1,9 +1,5 @@
 // All Word Runner tunables live here so playtests only change numbers.
 
-// true: play with the built-in demo word list and never touch GraphQL.
-// false: load the full word list through GET_WORDS (needs the database).
-export const USE_DEMO_WORDS = true;
-
 const GRAVITY = 2000; // px/s²
 const JUMP_VELOCITY = 1000; // px/s, full-hold jump
 const CUT_VELOCITY = 530; // upward speed after releasing the button early

@@ -7,9 +7,8 @@ import { useQuery } from '@apollo/client';
 import { MdScreenRotation } from 'react-icons/md';
 import type { Game } from 'phaser';
 import GET_WORDS from '../gql/getWords';
-import { RUNNER_CONFIG, USE_DEMO_WORDS } from './config';
+import { RUNNER_CONFIG } from './config';
 import { createGame } from './createGame';
-import { DEMO_WORDS } from './demoWords';
 import { normalisePool } from './logic/wordPool';
 import type { RawWord } from './logic/wordPool';
 import { readUser } from './storage';
@@ -22,13 +21,14 @@ export default function RunnerGame() {
   const exitRef = useRef(() => router.push('/'));
   const [portrait, setPortrait] = useState(false);
 
-  const { data, loading, error } = useQuery<{ words: RawWord[] }>(GET_WORDS, {
-    skip: USE_DEMO_WORDS,
-  });
-  const pool = useMemo(() => {
-    if (USE_DEMO_WORDS) return normalisePool(DEMO_WORDS, RUNNER_CONFIG.words);
-    return data ? normalisePool(data.words, RUNNER_CONFIG.words) : null;
-  }, [data]);
+  // Apollo's cache (cache-first) keeps the list across visits to this page,
+  // so returning from the title or home does not refetch.
+  const { data, loading, error } = useQuery<{ words: RawWord[] }>(GET_WORDS);
+  // Built once, when the data has arrived.
+  const pool = useMemo(
+    () => (data ? normalisePool(data.words, RUNNER_CONFIG.words) : null),
+    [data],
+  );
 
   useEffect(() => {
     exitRef.current = () => router.push('/');
@@ -43,7 +43,7 @@ export default function RunnerGame() {
     const timer = window.setTimeout(() => {
       const game = createGame(host, {
         words: pool,
-        sourceLabel: USE_DEMO_WORDS ? 'Demo words' : 'All words',
+        sourceLabel: 'All words',
         user: readUser(),
         onExit: () => exitRef.current(),
       });

@@ -4,7 +4,7 @@ import type { RunnerWord } from './logic/wordPool';
 // game registry.
 export type RunnerSession = {
   words: RunnerWord[];
-  // Shown on the title screen, e.g. "Demo words".
+  // Shown on the title screen, e.g. "All words".
   sourceLabel: string;
   user: { id: string; username: string } | null;
   onExit: () => void;
